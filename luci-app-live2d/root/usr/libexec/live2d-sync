@@ -1,0 +1,66 @@
+#!/bin/sh
+# 把 uci 配置同步成前端读取的 config.json
+# 用官方 jshn 生成 ✓ 转义绝对正确 ✓（人格提示词里有引号/换行也不怕 ✓）
+[ -d /www/luci-static/live2d ] || exit 0
+
+# jshn：官方 JSON 库 ✓ 转义绝对可靠 ✓
+. /usr/share/libubox/jshn.sh 2>/dev/null
+
+CFG=/www/luci-static/live2d/config.json
+
+g() {
+	v=$(uci -q get "live2d.$1" 2>/dev/null)
+	[ -n "$v" ] && printf '%s' "$v" || printf '%s' "$2"
+}
+gb() {
+	[ "$(g "$1" "$2")" = "1" ] && printf '1' || printf '0'
+}
+
+E=$(gb main.enabled 1)
+Z=$(g main.size 240)
+M=$(g main.model haru/haru_greeter_t03.model3.json)
+D=$(gb main.draggable 1)
+C=$(gb main.clickable 1)
+A=$(gb main.auto_idle 1)
+H=$(gb main.only_home 1)     # ★ 只在首页显示 ✓ 默认 1 ✓
+AI=$(gb ai.enabled 0)
+AIM=$(g ai.model '')
+SYS=$(g ai.system_prompt '')
+
+# 配置指纹 ✓ 变了前端就重置本地记忆 ✓
+STAMP=$(printf '%s' "$E$Z$M$D$C$A$H" | md5sum | cut -c1-10)
+
+# 扫描可用模型列表 ✓
+json_init
+json_add_boolean enabled "$E"      # jshn 要 0/1 ✗ 不是 true/false ✓
+json_add_int size "$Z"
+json_add_string model "$M"
+json_add_array models
+for mf in /www/luci-static/live2d/models/*/*.model3.json; do
+	[ -f "$mf" ] || continue
+	json_add_string "" "${mf#/www/luci-static/live2d/models/}"
+done
+json_close_array
+json_add_boolean draggable "$D"      # jshn 要 0/1 ✗ 不是 true/false ✓
+json_add_boolean clickable "$C"      # jshn 要 0/1 ✗ 不是 true/false ✓
+json_add_boolean auto_idle "$A"      # jshn 要 0/1 ✗ 不是 true/false ✓
+json_add_boolean only_home "$H"      # ★ 只在首页显示 ✓
+json_add_boolean ai "$AI"      # jshn 要 0/1 ✗ 不是 true/false ✓
+json_add_string ai_model "$AIM"
+json_add_string sys "$SYS"
+json_add_string stamp "$STAMP"
+
+OUT=$(json_dump)
+json_cleanup 2>/dev/null
+[ -n "$OUT" ] || exit 0
+
+printf '%s\n' "$OUT" > "$CFG.tmp"
+
+# 内容没变就不动文件 ✓
+if [ -f "$CFG" ] && cmp -s "$CFG.tmp" "$CFG"; then
+	rm -f "$CFG.tmp"
+else
+	mv "$CFG.tmp" "$CFG"
+fi
+
+exit 0

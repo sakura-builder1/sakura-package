@@ -1,0 +1,4 @@
+#!/bin/sh
+# 确保存在 sakura 配置
+[ -f /etc/config/sakura ] || touch /etc/config/sakura
+exit 0

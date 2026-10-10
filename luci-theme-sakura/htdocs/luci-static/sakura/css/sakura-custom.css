@@ -1,0 +1,276 @@
+
+/* ============================================================
+   樱花主题 · 侧边栏可爱图标（独立文件，避免被 cascade.css 缓存影响）
+   图标：/www/luci-static/sakura/icon/anime/   2026-09-24
+   ============================================================ */
+/* 几何：清掉字体图标字形，改用背景图 */
+body .main .main-left .nav li .menu::before,
+body .main .main-left .nav li a:first-child::before {
+	content: "" !important;
+	font-family: inherit !important;
+	width: 21px !important;
+	height: 21px !important;
+	left: 0.72rem !important;
+	top: 50% !important;
+	margin-top: -10.5px !important;
+	padding: 0 !important;
+	background-image: url('/luci-static/sakura/icon/anime/gift.png') !important;
+	background-size: 21px 21px !important;
+	background-repeat: no-repeat !important;
+	background-position: center !important;
+}
+body .main .main-left .nav li a.menu[data-title="QuickStart"]::before,
+body .main .main-left .nav li a.menu[data-name="quickstart"]::before,
+body .main .main-left .nav li > a[data-title="QuickStart"]::before,
+body .main .main-left .nav li > a[data-name="quickstart"]::before,
+body .main .main-left .nav li[data-name="quickstart"] > a::before,
+body .main .main-left .nav [data-title="QuickStart"]::before,
+body .main .main-left .nav [data-name="quickstart"]::before {
+	background-image: url('/luci-static/sakura/icon/anime/house.png') !important;
+}
+body .main .main-left .nav li a.menu[data-title="首页"]::before,
+body .main .main-left .nav li a.menu[data-name="quickstart"]::before,
+body .main .main-left .nav li > a[data-title="首页"]::before,
+body .main .main-left .nav li > a[data-name="quickstart"]::before,
+body .main .main-left .nav li[data-name="quickstart"] > a::before,
+body .main .main-left .nav [data-title="首页"]::before,
+body .main .main-left .nav [data-name="quickstart"]::before {
+	background-image: url('/luci-static/sakura/icon/anime/house.png') !important;
+}
+body .main .main-left .nav li a.menu[data-title="NetworkGuide"]::before,
+body .main .main-left .nav li a.menu[data-name="network_guide"]::before,
+body .main .main-left .nav li > a[data-title="NetworkGuide"]::before,
+body .main .main-left .nav li > a[data-name="network_guide"]::before,
+body .main .main-left .nav li[data-name="network_guide"] > a::before,
+body .main .main-left .nav [data-title="NetworkGuide"]::before,
+body .main .main-left .nav [data-name="network_guide"]::before {
+	background-image: url('/luci-static/sakura/icon/anime/compass.png') !important;
+}
+body .main .main-left .nav li a.menu[data-title="Network Guide"]::before,
+body .main .main-left .nav li a.menu[data-name="network_guide"]::before,
+body .main .main-left .nav li > a[data-title="Network Guide"]::before,
+body .main .main-left .nav li > a[data-name="network_guide"]::before,
+body .main .main-left .nav li[data-name="network_guide"] > a::before,
+body .main .main-left .nav [data-title="Network Guide"]::before,
+body .main .main-left .nav [data-name="network_guide"]::before {
+	background-image: url('/luci-static/sakura/icon/anime/compass.png') !important;
+}
+body .main .main-left .nav li a.menu[data-title="网络向导"]::before,
+body .main .main-left .nav li a.menu[data-name="network_guide"]::before,
+body .main .main-left .nav li > a[data-title="网络向导"]::before,
+body .main .main-left .nav li > a[data-name="network_guide"]::before,
+body .main .main-left .nav li[data-name="network_guide"] > a::before,
+body .main .main-left .nav [data-title="网络向导"]::before,
+body .main .main-left .nav [data-name="network_guide"]::before {
+	background-image: url('/luci-static/sakura/icon/anime/compass.png') !important;
+}
+body .main .main-left .nav li a.menu[data-title="Status"]::before,
+body .main .main-left .nav li a.menu[data-name="status"]::before,
+body .main .main-left .nav li > a[data-title="Status"]::before,
+body .main .main-left .nav li > a[data-name="status"]::before,
+body .main .main-left .nav li[data-name="status"] > a::before,
+body .main .main-left .nav [data-title="Status"]::before,
+body .main .main-left .nav [data-name="status"]::before {
+	background-image: url('/luci-static/sakura/icon/anime/chart.png') !important;
+}
+body .main .main-left .nav li a.menu[data-title="System"]::before,
+body .main .main-left .nav li a.menu[data-name="system"]::before,
+body .main .main-left .nav li > a[data-title="System"]::before,
+body .main .main-left .nav li > a[data-name="system"]::before,
+body .main .main-left .nav li[data-name="system"] > a::before,
+body .main .main-left .nav [data-title="System"]::before,
+body .main .main-left .nav [data-name="system"]::before {
+	background-image: url('/luci-static/sakura/icon/anime/gear.png') !important;
+}
+body .main .main-left .nav li a.menu[data-title="Services"]::before,
+body .main .main-left .nav li a.menu[data-name="services"]::before,
+body .main .main-left .nav li > a[data-title="Services"]::before,
+body .main .main-left .nav li > a[data-name="services"]::before,
+body .main .main-left .nav li[data-name="services"] > a::before,
+body .main .main-left .nav [data-title="Services"]::before,
+body .main .main-left .nav [data-name="services"]::before {
+	background-image: url('/luci-static/sakura/icon/anime/gift.png') !important;
+}
+body .main .main-left .nav li a.menu[data-title="NAS"]::before,
+body .main .main-left .nav li a.menu[data-name="nas"]::before,
+body .main .main-left .nav li > a[data-title="NAS"]::before,
+body .main .main-left .nav li > a[data-name="nas"]::before,
+body .main .main-left .nav li[data-name="nas"] > a::before,
+body .main .main-left .nav [data-title="NAS"]::before,
+body .main .main-left .nav [data-name="nas"]::before {
+	background-image: url('/luci-static/sakura/icon/anime/floppy.png') !important;
+}
+body .main .main-left .nav li a.menu[data-title="VPN"]::before,
+body .main .main-left .nav li a.menu[data-name="vpn"]::before,
+body .main .main-left .nav li > a[data-title="VPN"]::before,
+body .main .main-left .nav li > a[data-name="vpn"]::before,
+body .main .main-left .nav li[data-name="vpn"] > a::before,
+body .main .main-left .nav [data-title="VPN"]::before,
+body .main .main-left .nav [data-name="vpn"]::before {
+	background-image: url('/luci-static/sakura/icon/anime/lock.png') !important;
+}
+body .main .main-left .nav li a.menu[data-title="Network"]::before,
+body .main .main-left .nav li a.menu[data-name="network"]::before,
+body .main .main-left .nav li > a[data-title="Network"]::before,
+body .main .main-left .nav li > a[data-name="network"]::before,
+body .main .main-left .nav li[data-name="network"] > a::before,
+body .main .main-left .nav [data-title="Network"]::before,
+body .main .main-left .nav [data-name="network"]::before {
+	background-image: url('/luci-static/sakura/icon/anime/globe.png') !important;
+}
+body .main .main-left .nav li a.menu[data-title="Docker"]::before,
+body .main .main-left .nav li a.menu[data-name="docker"]::before,
+body .main .main-left .nav li > a[data-title="Docker"]::before,
+body .main .main-left .nav li > a[data-name="docker"]::before,
+body .main .main-left .nav li[data-name="docker"] > a::before,
+body .main .main-left .nav [data-title="Docker"]::before,
+body .main .main-left .nav [data-name="docker"]::before {
+	background-image: url('/luci-static/sakura/icon/anime/whale.png') !important;
+}
+body .main .main-left .nav li a.menu[data-title="Statistics"]::before,
+body .main .main-left .nav li a.menu[data-name="statistics"]::before,
+body .main .main-left .nav li > a[data-title="Statistics"]::before,
+body .main .main-left .nav li > a[data-name="statistics"]::before,
+body .main .main-left .nav li[data-name="statistics"] > a::before,
+body .main .main-left .nav [data-title="Statistics"]::before,
+body .main .main-left .nav [data-name="statistics"]::before {
+	background-image: url('/luci-static/sakura/icon/anime/linechart.png') !important;
+}
+body .main .main-left .nav li a.menu[data-title="Bandwidth_Monitor"]::before,
+body .main .main-left .nav li a.menu[data-name="bandwidth_monitor"]::before,
+body .main .main-left .nav li > a[data-title="Bandwidth_Monitor"]::before,
+body .main .main-left .nav li > a[data-name="bandwidth_monitor"]::before,
+body .main .main-left .nav li[data-name="bandwidth_monitor"] > a::before,
+body .main .main-left .nav [data-title="Bandwidth_Monitor"]::before,
+body .main .main-left .nav [data-name="bandwidth_monitor"]::before {
+	background-image: url('/luci-static/sakura/icon/anime/linechart.png') !important;
+}
+body .main .main-left .nav li a.menu[data-title="Control"]::before,
+body .main .main-left .nav li a.menu[data-name="control"]::before,
+body .main .main-left .nav li > a[data-title="Control"]::before,
+body .main .main-left .nav li > a[data-name="control"]::before,
+body .main .main-left .nav li[data-name="control"] > a::before,
+body .main .main-left .nav [data-title="Control"]::before,
+body .main .main-left .nav [data-name="control"]::before {
+	background-image: url('/luci-static/sakura/icon/anime/joystick.png') !important;
+}
+body .main .main-left .nav li a.menu[data-title="Log out"]::before,
+body .main .main-left .nav li a.menu[data-name="logout"]::before,
+body .main .main-left .nav li > a[data-title="Log out"]::before,
+body .main .main-left .nav li > a[data-name="logout"]::before,
+body .main .main-left .nav li[data-name="logout"] > a::before,
+body .main .main-left .nav [data-title="Log out"]::before,
+body .main .main-left .nav [data-name="logout"]::before {
+	background-image: url('/luci-static/sakura/icon/anime/door.png') !important;
+}
+body .main .main-left .nav li a.menu[data-title="Log_out"]::before,
+body .main .main-left .nav li a.menu[data-name="log_out"]::before,
+body .main .main-left .nav li > a[data-title="Log_out"]::before,
+body .main .main-left .nav li > a[data-name="log_out"]::before,
+body .main .main-left .nav li[data-name="log_out"] > a::before,
+body .main .main-left .nav [data-title="Log_out"]::before,
+body .main .main-left .nav [data-name="log_out"]::before {
+	background-image: url('/luci-static/sakura/icon/anime/door.png') !important;
+}
+
+/* ---- 补充图标：iStore / 电话 / 默认星星（2026-09-24 追加）---- */
+body .main .main-left .nav [data-title="iStore"]::before,
+body .main .main-left .nav [data-name="istore"]::before {
+	background-image: url('/luci-static/sakura/icon/anime/istore.png') !important;
+}
+body .main .main-left .nav [data-title="Asterisk"]::before,
+body .main .main-left .nav [data-name="asterisk"]::before {
+	background-image: url('/luci-static/sakura/icon/anime/phone.png') !important;
+}
+/* 兜底默认图标：礼盒 → 星星（避免和「服务」撞车）*/
+body .main .main-left .nav li .menu::before,
+body .main .main-left .nav li a:first-child::before {
+	background-image: url('/luci-static/sakura/icon/anime/star.png') !important;
+}
+
+/* ---- 修正：非折叠菜单项（无 .menu 类）用更高优先级，避免被默认图标盖掉 ---- */
+body .main .main-left .nav li a[data-title="QuickStart"]:first-child::before,
+body .main .main-left .nav li a[data-name="quickstart"]:first-child::before,
+body .main .main-left .nav li a[data-title="首页"]:first-child::before {
+	background-image: url('/luci-static/sakura/icon/anime/house.png') !important;
+}
+body .main .main-left .nav li a[data-title="NetworkGuide"]:first-child::before,
+body .main .main-left .nav li a[data-name="network_guide"]:first-child::before,
+body .main .main-left .nav li a[data-title="网络向导"]:first-child::before {
+	background-image: url('/luci-static/sakura/icon/anime/compass.png') !important;
+}
+body .main .main-left .nav li a[data-title="iStore"]:first-child::before,
+body .main .main-left .nav li a[data-name="istore"]:first-child::before {
+	background-image: url('/luci-static/sakura/icon/anime/istore.png') !important;
+}
+
+
+/* ==========================================================================
+   樱花主题 · 侧边栏标题不换行（展开子菜单时会被挤成两行 ✗）
+   ========================================================================== */
+.main .main-left .sidenav-header,
+.main .main-left .sidenav-header .brand {
+	white-space: nowrap !important;
+	overflow: visible !important;
+	text-overflow: clip !important;
+	word-break: keep-all !important;
+	overflow-wrap: normal !important;
+	flex-wrap: nowrap !important;
+}
+.main .main-left .sidenav-header .brand {
+	display: inline-block !important;
+	width: auto !important;
+	max-width: none !important;
+	font-size: 1.25rem !important;      /* 略缩小，保证一行放得下 */
+	line-height: 1.25 !important;
+	letter-spacing: -0.01em !important;
+	text-align: left !important;
+}
+.main .main-left .sidenav-header .brand span,
+.main .main-left .sidenav-header .brand-text {
+	white-space: nowrap !important;
+	display: inline !important;
+}
+/* 展开子菜单时侧边栏宽度别缩 */
+.main .main-left { min-width: 190px !important; }
+
+
+/* ==========================================================================
+   樱花主题 · 操作按钮统一粉色（保存并应用 / 应用 / 保存）
+   ========================================================================== */
+.cbi-page-actions .cbi-button-apply,
+.cbi-page-actions .cbi-button-save,
+.cbi-button-apply,
+.cbi-button-save,
+.cbi-button-action.important,
+.cbi-page-actions .cbi-button-action {
+	background: linear-gradient(135deg, var(--primary, #D6336C), #E8629A) !important;
+	background-color: var(--primary, #D6336C) !important;
+	border-color: var(--primary, #D6336C) !important;
+	color: #fff !important;
+	box-shadow: 0 4px 12px rgba(214, 51, 108, 0.25) !important;
+}
+.cbi-page-actions .cbi-button-apply:hover,
+.cbi-button-apply:hover,
+.cbi-button-save:hover {
+	filter: brightness(1.08);
+}
+
+/* ==========================================================================
+   手机端适配（修复：侧边栏固定宽度破坏响应式 ✗）
+   桌面端保留 min-width:190px（菜单标题不换行 ✓）
+   手机端还原（让 Argon 的抽屉式侧边栏正常工作 ✓）
+   ========================================================================== */
+@media screen and (max-width: 768px) {
+	.main .main-left { min-width: 0 !important; }
+}
+
+@media screen and (max-width: 480px) {
+	.main .main-left { min-width: 0 !important; }
+	/* 小屏下菜单图标略缩，避免拥挤 ✓ */
+	body .main .main-left .nav li .menu::before,
+	body .main .main-left .nav li a:first-child::before {
+		width: 19px !important;
+		height: 19px !important;
+	}
+}

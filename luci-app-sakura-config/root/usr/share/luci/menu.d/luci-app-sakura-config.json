@@ -1,0 +1,15 @@
+{
+  "admin/system/sakura-config": {
+    "title": "Sakura Theme Configuration",
+    "order": 89,
+    "action": {
+      "type": "view",
+      "path": "sakura-config"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-sakura-config"
+      ]
+    }
+  }
+}

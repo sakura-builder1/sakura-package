@@ -1,0 +1,34 @@
+{
+  "luci-app-sakura-config": {
+    "description": "Grant access to Sakura theme configuration",
+    "read": {
+      "file": {
+        "/www/luci-static/sakura/background/*": [
+          "list"
+        ]
+      },
+      "uci": [
+        "sakura"
+      ]
+    },
+    "write": {
+      "file": {
+        "/www/luci-static/sakura/background/*": [
+          "write"
+        ],
+        "/bin/chmod": [
+          "exec"
+        ],
+        "/bin/mv": [
+          "exec"
+        ],
+        "/bin/rm": [
+          "exec"
+        ]
+      },
+      "uci": [
+        "sakura"
+      ]
+    }
+  }
+}

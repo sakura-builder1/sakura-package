@@ -1,0 +1,10 @@
+#!/bin/sh
+# 樱花主题注册（与 Argon 共存 ✓ 不删除对方的注册）
+if [ "$PKG_UPGRADE" != 1 ]; then
+	uci get luci.themes.Sakura >/dev/null 2>&1 || \
+	uci batch <<-EOF
+		set luci.themes.Sakura=/luci-static/sakura
+		commit luci
+	EOF
+fi
+exit 0

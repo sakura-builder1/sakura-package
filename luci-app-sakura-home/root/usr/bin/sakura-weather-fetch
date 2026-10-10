@@ -1,0 +1,271 @@
+#!/bin/sh
+# 樱花首页数据抓取（cron 每分钟跑 ✓ 天气自限流 ✓）
+# ---------- 下载器兼容（优先 uclient-fetch 回退 wget）+ URL 编码 ----------
+DL=""
+for c in uclient-fetch wget; do
+	command -v "$c" >/dev/null 2>&1 && { DL="$c"; break; }
+done
+[ -n "$DL" ] || DL=wget
+
+# 中文参数必须百分号编码（uclient-fetch 不支持原样传中文）
+# busybox 没有 od/xxd，改用 ucode（本插件必装依赖）
+urlencode() {
+	ucode -e 'let s=ARGV[0]||""; let o=""; for(let i=0;i<length(s);i++){let c=ord(s,i); if((c>=48&&c<=57)||(c>=65&&c<=90)||(c>=97&&c<=122)||c==45||c==46||c==95||c==126) o+=chr(c); else o+=sprintf("%%%02X",c);} print(o);' "$1" 2>/dev/null
+}
+
+C=/tmp/sakura_weather.cache
+TMP=/tmp/sakura_weather.tmp
+DC=/tmp/sakura_disks.cache
+[ -x /usr/bin/sakura-weather-fetch ] || exit 0
+
+# ---------- ① 磁盘（每次都更新 ✓ 很轻 ✓）----------
+{
+  # ★ 按【设备】去重 + 排除 Docker 内部挂载层
+  #   以前 /opt、/opt/docker、overlay2/<hash>/merged 会各显示一条
+  #   其实都是同一块物理盘，重复且误导
+  df -k -P 2>/dev/null | tail -n +2 | awk -F'[ \t]+' '
+    {
+      dev = $1; total = $2; used = $3; avail = $4; pct = $5; mp = $6
+
+      # 只关心这几个挂载点
+      if (mp != "/" && mp != "/tmp" && mp != "/opt" && mp != "/opt/docker" &&
+          mp !~ /^\/mnt\// && mp !~ /^\/srv\//) next
+
+      # docker overlay 内部层、rom、tmp 子目录一律跳过
+      if (mp ~ /^\/opt\/docker\//) next
+      if (mp ~ /^\/rom/) next
+      if (mp ~ /^\/tmp\//) next
+
+      if (total + 0 <= 0) next
+
+      # 同一设备只保留第一条（df 顺序里 / 和 /opt 在前 ✓）
+      if (dev in seen) next
+      seen[dev] = 1
+
+      printf "%s|%s|%s|%s|%s|%s\n", mp, dev, total, used, avail, pct
+    }'
+} > "$DC.tmp" 2>/dev/null && mv "$DC.tmp" "$DC"
+
+# ---------- ③ 流量累计（函数化 ✓ 避免 exit 拖走后续代码 ✓）----------
+do_traffic() {
+TC=/tmp/sakura_traffic.cache
+WANDEV=$(ubus call network.interface.wan status 2>/dev/null | jsonfilter -e '@.l3_device' 2>/dev/null)
+[ -z "$WANDEV" ] && WANDEV=$(ubus call network.interface dump 2>/dev/null | jsonfilter -e '@.interface[@.up=true].l3_device' 2>/dev/null | head -n1)
+[ -z "$WANDEV" ] && return 0
+NOW_RX=$(awk -v d="$WANDEV:" '$1 == d { print $2 }' /proc/net/dev 2>/dev/null | head -n1)
+NOW_TX=$(awk -v d="$WANDEV:" '$1 == d { print $10 }' /proc/net/dev 2>/dev/null | head -n1)
+[ -z "$NOW_RX" ] && return 0
+[ -z "$NOW_TX" ] && return 0
+[ "$NOW_RX" = "0" ] && return 0
+
+TODAY=$(date +%Y-%m-%d)
+FIRST=0
+[ -f "$TC" ] || FIRST=1
+MONTH=$(date +%Y-%m)
+D_RX=0; D_TX=0; M_RX=0; M_TX=0; T_RX=0; T_TX=0; L_RX=0; L_TX=0; L_DATE=""; L_MONTH=""
+[ -f "$TC" ] && . "$TC"
+
+# 日期/月份翻转 -> 归零 ✓
+[ "$L_DATE" != "$TODAY" ] && { D_RX=0; D_TX=0; }
+[ "$L_MONTH" != "$MONTH" ] && { M_RX=0; M_TX=0; }
+
+# 计数器回绕（接口重启）-> 忽略本次 ✓
+if [ "$FIRST" = "1" ]; then
+	# 首次运行：只记基准，不把历史总量算进来 ✓
+	D_RX=0; D_TX=0; M_RX=0; M_TX=0; T_RX=0; T_TX=0
+	L_RX=$NOW_RX; L_TX=$NOW_TX
+else
+DIFF_RX=$((NOW_RX - L_RX))
+DIFF_TX=$((NOW_TX - L_TX))
+if [ "$DIFF_RX" -lt 0 ] 2>/dev/null; then DIFF_RX=0; fi
+if [ "$DIFF_TX" -lt 0 ] 2>/dev/null; then DIFF_TX=0; fi
+
+D_RX=$((D_RX + DIFF_RX)); D_TX=$((D_TX + DIFF_TX))
+M_RX=$((M_RX + DIFF_RX)); M_TX=$((M_TX + DIFF_TX))
+T_RX=$((T_RX + DIFF_RX)); T_TX=$((T_TX + DIFF_TX))
+fi
+
+{
+  echo "L_DATE=$TODAY"
+  echo "L_MONTH=$MONTH"
+  echo "D_RX=$D_RX";  echo "D_TX=$D_TX"
+  echo "M_RX=$M_RX";  echo "M_TX=$M_TX"
+  echo "T_RX=$T_RX";  echo "T_TX=$T_TX"
+  echo "L_RX=$NOW_RX"; echo "L_TX=$NOW_TX"
+  echo "L_TS=$(date +%s)"
+  echo "DEV=$WANDEV"
+} > "$TC.tmp" 2>/dev/null && mv "$TC.tmp" "$TC"
+
+
+
+# ---------- ④ 每设备今日流量（conntrack 快照 + 增量累计）----------
+# ★ 为什么不用 nlbwmon：
+#   本机固件内核【不推送 conntrack 事件】（conntrack -E 恒为空），
+#   nlbwmon 和事件流方案都收不到数据。只能定时读快照算差值。
+#   连接关闭后会在表里留约 2 分钟（TIME_WAIT），每分钟采样能抓到绝大部分。
+do_dev_traffic() {
+	command -v conntrack >/dev/null 2>&1 || return 0
+
+	ACCT_DIR=/etc/sakura-traffic
+	ST=/tmp/sakura_dev_state
+	DY=/tmp/sakura_dev_daily
+	PERS=$ACCT_DIR/daily
+	CT=/tmp/.sakura_ct_now
+	TODAY=$(date +%Y-%m-%d)
+
+	mkdir -p "$ACCT_DIR" 2>/dev/null
+
+	# LAN 前缀 + 路由器自身地址
+	LANP=$(ip -4 addr show br-lan 2>/dev/null | grep -o 'inet [0-9]*\.[0-9]*\.[0-9]*\.' | head -1 | cut -d' ' -f2)
+	[ -z "$LANP" ] && LANP=192.168.10.
+	ROUTER=$(ip -4 addr show br-lan 2>/dev/null | grep -o 'inet [0-9.]*' | head -1 | cut -d' ' -f2)
+
+	FIRST=0
+	[ -f "$ST" ] || FIRST=1
+
+	# ★ 跨天/跨重启处理
+	#   关键：只有当【当前累计不存在或不是今天的】才去恢复，
+	#   否则每次运行都会用旧的持久化副本把新数据冲掉（踩过这个坑）
+	DYM=/tmp/sakura_dev_daily.date
+	if [ -s "$DY" ] && [ "$(cat "$DYM" 2>/dev/null)" = "$TODAY" ]; then
+		:    # 当前累计有效，继续累加
+	else
+		if [ -f "$PERS" ] && [ "$(head -1 "$PERS" 2>/dev/null)" = "$TODAY" ]; then
+			tail -n +2 "$PERS" > "$DY" 2>/dev/null    # 重启后恢复今天的量
+		else
+			: > "$DY"                                  # 新的一天，清零
+		fi
+		echo "$TODAY" > "$DYM"
+	fi
+	: > "$DY.next"; : > "$ST.new"
+
+	conntrack -L 2>/dev/null > "$CT" || return 0
+	[ -s "$CT" ] || return 0
+
+	awk -v LANP="$LANP" -v ROUTER="$ROUTER" -v ST="$ST" -v DY="$DY" -v CT="$CT" -v FIRST="$FIRST" '
+	FILENAME == ST { k = $1; sb1[k] = $2 + 0; sb2[k] = $3 + 0; next }
+	FILENAME == DY { d = $1; drx[d] = $2 + 0; dtx[d] = $3 + 0; next }
+	FILENAME == CT {
+		ns = 0; nb = 0; s1 = ""; d1 = ""; sp1 = ""; dp1 = ""; b1 = 0; b2 = 0
+		for (i = 1; i <= NF; i++) {
+			if ($i ~ /^src=/)        { ns++; v = substr($i, 5); if (ns == 1) s1 = v }
+			else if ($i ~ /^dst=/)   { if (d1 == "") d1 = substr($i, 5) }
+			else if ($i ~ /^sport=/) { if (sp1 == "") sp1 = substr($i, 7) }
+			else if ($i ~ /^dport=/) { if (dp1 == "") dp1 = substr($i, 7) }
+			else if ($i ~ /^bytes=/) { nb++; v = substr($i, 7) + 0
+			                           if (nb == 1) b1 = v; else if (nb == 2) b2 = v }
+		}
+		if (s1 == "" || d1 == "") next
+		if (s1 == "127.0.0.1" || d1 == "127.0.0.1") next
+		if (d1 ~ /^(224|239|255)\./) next            # 组播/广播
+		s1lan = (index(s1, LANP) == 1)
+		d1lan = (index(d1, LANP) == 1)
+		if (s1lan && d1lan) next                      # 内网互访
+		else if (s1lan) { dev = s1; tx = b1; rx = b2 }
+		else if (d1lan) { dev = d1; rx = b1; tx = b2 }
+		else next
+		if (dev == ROUTER) next                       # 路由器自己不算设备
+
+		key = s1 "|" d1 "|" sp1 "|" dp1
+		if (FIRST == 1) { dt = 0; dr = 0 }            # 首次只记基准
+		else if (key in sb1) {
+			dt = b1 - sb1[key]; dr = b2 - sb2[key]
+			if (dt < 0) dt = 0
+			if (dr < 0) dr = 0
+		} else { dt = b1; dr = b2 }                   # 新连接全量计入
+
+		dtx[dev] += dt; drx[dev] += dr
+		cur_b1[key] = b1; cur_b2[key] = b2
+		next
+	}
+	END {
+		for (k in cur_b1) print k, cur_b1[k], cur_b2[k] > (ST ".new")
+		for (d in drx) if (drx[d] + dtx[d] > 0) print d, drx[d], dtx[d] > (DY ".next")
+	}
+	' "$ST" "$DY" "$CT" 2>/dev/null
+
+	[ -s "$ST.new" ] && mv -f "$ST.new" "$ST" || : > "$ST"
+	[ -s "$DY.next" ] && mv -f "$DY.next" "$DY" || : > "$DY"
+
+	# 输出前端要的格式：ip|mac|rx|tx
+	: > /tmp/sakura_dev_traffic.tmp
+	while read -r ip rx tx; do
+		[ -z "$ip" ] && continue
+		[ "$((rx + tx))" -gt 0 ] 2>/dev/null || continue
+		mac=$(awk -v ip="$ip" '$1 == ip { print $4 }' /proc/net/arp 2>/dev/null | head -1)
+		[ -z "$mac" ] || [ "$mac" = "00:00:00:00:00:00" ] && mac=""
+		echo "$ip|${mac:-00:00:00:00:00:00}|$rx|$tx"
+	done < "$DY" >> /tmp/sakura_dev_traffic.tmp 2>/dev/null
+	mv -f /tmp/sakura_dev_traffic.tmp /tmp/sakura_dev_traffic.cache 2>/dev/null
+
+	# 每 10 分钟持久化一次（护闪存）
+	NOWS=$(date +%s)
+	PREVS=$(cat "$ACCT_DIR/.lastsave" 2>/dev/null || echo 0)
+	if [ $((NOWS - PREVS)) -ge 600 ]; then
+		{ echo "$TODAY"; cat "$DY"; } > "$PERS.tmp" 2>/dev/null && mv "$PERS.tmp" "$PERS"
+		echo "$NOWS" > "$ACCT_DIR/.lastsave"
+	fi
+	return 0
+}
+do_dev_traffic
+	return 0
+}
+do_traffic
+
+# ---------- ② 天气（15 分钟限流 ✓）----------
+NOW=$(date +%s)
+OLD=0
+[ -f "$C" ] && OLD=$(sed -n 's/^ts=//p' "$C" 2>/dev/null)
+[ -z "$OLD" ] && OLD=0
+[ $((NOW - OLD)) -lt 900 ] && exit 0
+
+J=$("$DL" -qO- --timeout=12 'https://ip.zxinc.org/api.php?type=json' 2>/dev/null)
+[ -z "$J" ] && exit 1
+LOC=$(printf '%s' "$J" | jsonfilter -e '@.data.country' 2>/dev/null)
+IPX=$(printf '%s' "$J" | jsonfilter -e '@.data.myip' 2>/dev/null)
+[ -z "$LOC" ] && exit 1
+PROV=$(printf '%s' "$LOC" | sed 's/^[^–]*–//; s/–.*$//')
+CITY=$(printf '%s' "$LOC" | sed 's/.*–//')
+[ -z "$CITY" ] && CITY="$LOC"
+
+G=$("$DL" -qO- --timeout=12 "https://geocoding-api.open-meteo.com/v1/search?name=$(urlencode "$CITY")&count=1&language=zh&format=json" 2>/dev/null)
+LAT=$(printf '%s' "$G" | jsonfilter -e '@.results[0].latitude' 2>/dev/null)
+LON=$(printf '%s' "$G" | jsonfilter -e '@.results[0].longitude' 2>/dev/null)
+[ -z "$LAT" ] && exit 1
+
+W=$("$DL" -qO- --timeout=12 "https://api.open-meteo.com/v1/forecast?latitude=$LAT&longitude=$LON&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day&daily=temperature_2m_max,temperature_2m_min&forecast_days=1&timezone=Asia%2FShanghai" 2>/dev/null)
+[ -z "$W" ] && exit 1
+
+TEMP=$(printf '%s' "$W" | jsonfilter -e '@.current.temperature_2m')
+FEELS=$(printf '%s' "$W" | jsonfilter -e '@.current.apparent_temperature')
+HUM=$(printf '%s' "$W" | jsonfilter -e '@.current.relative_humidity_2m')
+WIND=$(printf '%s' "$W" | jsonfilter -e '@.current.wind_speed_10m')
+CODE=$(printf '%s' "$W" | jsonfilter -e '@.current.weather_code')
+DAY=$(printf '%s' "$W" | jsonfilter -e '@.current.is_day')
+TMAX=$(printf '%s' "$W" | jsonfilter -e '@.daily.temperature_2m_max[0]')
+TMIN=$(printf '%s' "$W" | jsonfilter -e '@.daily.temperature_2m_min[0]')
+
+DESC="未知"; ICON="🌡️"; ANIM="none"
+case "$CODE" in
+  0) DESC="晴"; ICON="☀️"; ANIM="sun";;
+  1) DESC="晴间多云"; ICON="🌤️"; ANIM="sun";;
+  2) DESC="局部多云"; ICON="⛅"; ANIM="cloud";;
+  3) DESC="阴"; ICON="☁️"; ANIM="cloud";;
+  45|48) DESC="雾"; ICON="🌫️"; ANIM="fog";;
+  51|53|55) DESC="毛毛雨"; ICON="🌦️"; ANIM="rain";;
+  56|57|66|67) DESC="冻雨"; ICON="🌧️"; ANIM="rain";;
+  61|63|65) DESC="雨"; ICON="🌧️"; ANIM="rain";;
+  71|73|75|77) DESC="雪"; ICON="❄️"; ANIM="snow";;
+  80|81|82) DESC="阵雨"; ICON="🌦️"; ANIM="rain";;
+  85|86) DESC="阵雪"; ICON="🌨️"; ANIM="snow";;
+  95|96|99) DESC="雷阵雨"; ICON="⛈️"; ANIM="storm";;
+esac
+[ "$DAY" = "0" ] && case "$CODE" in 0|1) ICON="🌙";; esac
+
+{ echo "ts=$NOW"; echo "city=$CITY"; echo "region=$PROV"; echo "ip=$IPX"; echo "temp=$TEMP"; echo "feels=$FEELS";
+  echo "hum=$HUM"; echo "wind=$WIND"; echo "code=$CODE"; echo "desc=$DESC"; echo "icon=$ICON"; echo "anim=$ANIM";
+  echo "tmax=$TMAX"; echo "tmin=$TMIN"; } > "$TMP" 2>/dev/null && mv "$TMP" "$C"
+
+
+
+exit 0

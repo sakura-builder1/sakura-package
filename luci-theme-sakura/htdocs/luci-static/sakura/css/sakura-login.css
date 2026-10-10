@@ -1,0 +1,151 @@
+/* ==========================================================================
+   樱花主题 · 登录页（输入框恢复 argon 原版布局：图标 + 下划线，只染粉色）
+   ========================================================================== */
+html, body { overflow: hidden !important; width: 100vw !important; height: 100vh !important; margin: 0 !important; }
+
+/* 父容器 flex 居中（不用 fixed，免疫 transform） */
+.login-page {
+	display: flex !important; flex-direction: column !important;
+	align-items: center !important; justify-content: center !important;
+	width: 100vw !important; height: 100vh !important;
+	transform: none !important; filter: none !important; background: transparent !important;
+	overflow: hidden !important; padding: 0 !important; margin: 0 !important;
+}
+.login-page .main-bg, .login-page #main-bg {
+	position: absolute !important; inset: 0 !important;
+	width: 100% !important; max-width: none !important; height: 100% !important;
+	z-index: 0 !important; overflow: hidden !important; margin: 0 !important;
+}
+.login-page .main-bg img, .login-page #main-bg img {
+	width: 100% !important; height: 100% !important; max-width: none !important;
+	object-fit: cover !important; object-position: center center !important;
+}
+
+/* 卡片 */
+.login-page .login-container .login-form {
+	position: relative !important; z-index: 10 !important;
+	flex: 0 0 auto !important; align-self: center !important;
+	height: auto !important; width: 400px !important; max-width: 90vw !important;
+	margin: 0 !important;
+	background: rgba(255, 255, 255, var(--blur-opacity, 0.72)) !important;
+	backdrop-filter: blur(18px) saturate(1.3) !important;
+	-webkit-backdrop-filter: blur(18px) saturate(1.3) !important;
+	border: 1px solid rgba(255, 255, 255, var(--blur-opacity, 0.9)) !important;
+	border-radius: 20px !important;
+	box-shadow: 0 20px 60px rgba(214, 51, 108, 0.2) !important;
+	padding: 2.4rem 2.4rem !important;
+	box-sizing: border-box !important;
+}
+.login-page .login-container .login-form .brand {
+	display: flex !important; justify-content: center !important; margin: 0 0 1.8rem 0 !important;
+}
+
+/* ★ 输入框：恢复原版（无边框圆角，只有下划线 + 图标留位） */
+.login-page .login-container .login-form .form-login .input-group {
+	position: relative !important; margin-bottom: 1.4rem !important;
+}
+.login-page .login-container .login-form .form-login .input-group input {
+	width: 100% !important; box-sizing: border-box !important;
+	background: transparent !important;
+	background-color: transparent !important;
+	color: #4A2436 !important;
+	border: none !important;
+	border-bottom: 1px solid rgba(214, 51, 108, 0.35) !important;
+	border-radius: 0 !important;
+	box-shadow: none !important;
+	text-align: left !important;
+	padding: 0.55rem 0.6rem 0.55rem 2.4rem !important;   /* ★ 左侧留出图标位置 */
+	font-size: 1rem !important;
+}
+.login-page .login-container .login-form .form-login .input-group input:focus {
+	border-bottom-color: var(--primary, #D6336C) !important;
+	box-shadow: none !important;
+	outline: none !important;
+}
+/* 图标：保持原位，只染粉色 */
+.login-page .login-container .login-form .form-login .input-group::before {
+	color: var(--primary, #D6336C) !important;
+	left: 0.2rem !important;
+}
+/* ★ 隐藏那些多余的标签文字（就是它们压住输入框的） */
+.login-page .login-container .login-form .form-login .input-group label,
+.login-page .login-container .login-form .form-login .cbi-value-title,
+.login-page .login-container .login-form .form-login label.checkbox {
+	position: absolute !important;
+	width: 1px !important; height: 1px !important;
+	padding: 0 !important; margin: -1px !important;
+	overflow: hidden !important;
+	clip: rect(0, 0, 0, 0) !important;
+	white-space: nowrap !important;
+	border: 0 !important;
+}
+
+/* 按钮：粉色渐变 */
+.login-page .login-container .login-form .form-login .cbi-button-apply,
+.login-page .login-container .login-form .form-login input[type="submit"] {
+	display: block !important; width: 100% !important;
+	background-color: var(--primary, #D6336C) !important;
+	background-image: linear-gradient(135deg, var(--primary, #D6336C), #E8629A) !important;
+	border: 0 !important; border-radius: 12px !important; color: #fff !important;
+	padding: 0.75rem 0 !important; font-size: 1rem !important; letter-spacing: 0.12em !important;
+	box-shadow: 0 8px 20px rgba(214, 51, 108, 0.3) !important;
+	margin-top: 1rem !important; cursor: pointer !important;
+}
+.login-page .login-container .login-form .errorbox,
+.login-page .login-container .login-form .alert-message {
+	background: rgba(214, 51, 108, 0.1) !important; border: 1px solid rgba(214, 51, 108, 0.28) !important;
+	border-radius: 10px !important; color: #A3245A !important; font-size: 0.84rem !important;
+}
+
+/* 登录页品牌图标：加大 + 圆角 */
+.login-page .login-container .login-form .brand .icon.sk-brand-icon,
+.login-page .login-container .login-form .brand .icon {
+	width: 64px !important;
+	height: 64px !important;
+	border-radius: 18px !important;
+	box-shadow: 0 6px 18px rgba(214, 51, 108, 0.22) !important;
+	background: rgba(255, 255, 255, var(--blur-opacity, 0.55)) !important;
+	padding: 4px !important;
+	box-sizing: border-box !important;
+	object-fit: contain !important;
+}
+
+
+/* ==========================================================================
+   登录页最终修正：干掉外层面板（消除双层）+ 强力居中
+   ========================================================================== */
+/* 外层容器：完全透明化（只当定位容器用） */
+.login-page .login-container {
+	background: transparent !important;
+	background-color: transparent !important;
+	backdrop-filter: none !important;
+	-webkit-backdrop-filter: none !important;
+	box-shadow: none !important;
+	border: 0 !important;
+	border-radius: 0 !important;
+	padding: 0 !important;
+	margin: 0 !important;
+	min-height: 100vh !important;
+	min-height: 100dvh !important;
+	display: flex !important;
+	flex-direction: column !important;
+	align-items: center !important;
+	justify-content: center !important;
+	width: 100vw !important;
+}
+
+/* 内层卡片：唯一可见的框 */
+.login-page .login-container .login-form {
+	flex: 0 0 auto !important;
+	align-self: center !important;
+	height: auto !important;
+	margin: 0 auto !important;
+}
+
+/* 图标：替换成樱花少女（已换文件 ✓），确保尺寸 */
+.login-page .login-container .login-form .brand .icon {
+	width: 52px !important;
+	height: 52px !important;
+	border-radius: 14px !important;
+	object-fit: contain !important;
+}

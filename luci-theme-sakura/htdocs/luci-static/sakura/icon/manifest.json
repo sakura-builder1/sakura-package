@@ -1,0 +1,14 @@
+{
+  "name": "Sakura Theme",
+  "display": "standalone",
+  "icons": [
+    {
+      "src": "android-icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ],
+  "short_name": "Sakura",
+  "theme_color": "#D6336C",
+  "background_color": "#ffeef5"
+}

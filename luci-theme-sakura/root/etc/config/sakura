@@ -1,0 +1,9 @@
+config global
+	option primary '#D6336C'
+	option transparency '0.3'
+	option transparency_dark '0.3'
+	option mode 'normal'
+	option login_bg 'sakura_girl.jpg'
+	option dashboard_bg 'sakura_girl.jpg'
+	option sakura '0'
+	option sakura_count '30'

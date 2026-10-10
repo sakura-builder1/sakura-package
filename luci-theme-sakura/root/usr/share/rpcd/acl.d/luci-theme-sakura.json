@@ -1,0 +1,15 @@
+{
+    "luci-theme-sakura": {
+        "description": "Grant UCI access for luci-theme-sakura",
+        "read": {
+            "uci": [
+                "sakura"
+            ]
+        },
+        "write": {
+            "uci": [
+                "sakura"
+            ]
+        }
+    }
+}

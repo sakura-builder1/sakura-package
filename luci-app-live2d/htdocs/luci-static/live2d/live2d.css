@@ -1,0 +1,205 @@
+/* Live2D 看板娘 ✓ 跟随樱花主题 */
+#live2d-box {
+	position: fixed; right: 18px; bottom: 12px; left: auto;   /* ★ 默认右下角 ✓ */
+	width: 240px; height: 350px;
+	/* 不用 overflow:hidden ✗ canvas 自己会裁剪画面 ✓ 气泡才能显示到框外 ✓ */
+	pointer-events: none;    /* ✓ 默认整块穿透 ✗ 不挡页面点击 ✓ */
+	z-index: 9999; cursor: grab;
+	transition: opacity .3s, transform .3s;
+	user-select: none;
+}
+#live2d-box.l2d-hidden { display: none; }
+#live2d-box.l2d-hit { cursor: grab; }
+#live2d-box.l2d-dragging { cursor: grabbing; }
+#live2d-canvas { width: 100%; height: 100%; display: block; position: relative; z-index: 1; pointer-events: none; touch-action: none; }
+#live2d-box.l2d-hit #live2d-canvas { pointer-events: auto; }
+#live2d-box.l2d-hit { touch-action: none; }
+
+#live2d-bar {
+	position: absolute; top: 4px; right: 4px;
+	display: flex; gap: 4px;
+	z-index: 20;              /* 必须在 canvas 之上 ✓ */
+	pointer-events: auto;
+	opacity: .45;
+	transition: opacity .25s;
+}
+/* opacity 由 JS 控制 ✓ 因为 box 默认 pointer-events:none ✗ :hover 不可靠 ✓ */
+.l2d-btn {
+	width: 24px; height: 24px; line-height: 1;
+	border: 0; border-radius: 50%; cursor: pointer;
+	font-size: 14px; padding: 0;
+	color: #fff; background: rgba(0, 0, 0, .45);
+	position: relative; z-index: 21;
+	pointer-events: auto;
+	display: flex; align-items: center; justify-content: center;
+}
+.l2d-btn:active { transform: scale(.9); }
+.l2d-btn:hover { background: var(--primary, #ff8fb1); }
+
+#live2d-tip {
+	/* 气泡放到方框【外面】✓ 不会被模型和按钮挡住 ✓ */
+	position: absolute; left: 50%; bottom: 100%;
+	margin-bottom: 10px;
+	transform: translateX(-50%) translateY(8px);
+	padding: 7px 14px; border-radius: 14px;
+	font-size: 12px; line-height: 1.4;
+	max-width: 230px; text-align: center; white-space: normal;
+	color: var(--text-color-high, #333);
+	background: rgba(255, 255, 255, .95);
+	box-shadow: 0 3px 12px rgba(0, 0, 0, .16);
+	opacity: 0; pointer-events: none;
+	transition: opacity .25s, transform .25s;
+	z-index: 25;
+}
+#live2d-tip.l2d-show { opacity: 1; transform: translateX(-50%) translateY(0); }
+/* 上方空间不够时翻到下面 ✓ */
+#live2d-tip.l2d-below { bottom: auto; top: 100%; margin-bottom: 0; margin-top: 10px; }
+
+#live2d-restore {
+	position: fixed; right: 16px; bottom: 16px;
+	width: 40px; height: 40px; border-radius: 50%;
+	border: 0; cursor: pointer; font-size: 20px;
+	background: var(--primary, #ff8fb1);
+	box-shadow: 0 3px 12px rgba(0, 0, 0, .2);
+	z-index: 9999;
+}
+#live2d-restore:hover { transform: scale(1.08); }
+
+/* 手机端小一点 */
+@media (max-width: 768px) {
+	/* 不再用 !important 写死尺寸 ✗ 否则 +/− 按钮会失效 ✓ */
+	#live2d-box { right: 8px; left: auto; bottom: 8px; }
+	.l2d-btn { width: 26px; height: 26px; font-size: 15px; }
+}
+
+/* ===== AI 对话面板 ✓ ===== */
+#live2d-chat {
+	position: absolute; left: 50%; bottom: 100%;
+	transform: translateX(-50%);
+	width: 250px; margin-bottom: 10px;
+	display: none; flex-direction: column; gap: 6px;
+	pointer-events: auto; z-index: 26;
+}
+#live2d-chat.on { display: flex; }
+
+#live2d-bubble {
+	max-height: 150px; overflow-y: auto;
+	padding: 8px 12px; border-radius: 14px;
+	font-size: 12.5px; line-height: 1.5;
+	text-align: left; word-break: break-word;
+	color: var(--text-color-high, #333);
+	background: rgba(255, 255, 255, .96);
+	box-shadow: 0 3px 14px rgba(0, 0, 0, .18);
+	opacity: 0; transform: translateY(6px);
+	transition: opacity .22s, transform .22s;
+	white-space: pre-wrap;
+}
+#live2d-bubble.show { opacity: 1; transform: translateY(0); }
+#live2d-bubble.thinking { color: #999; font-style: italic; }
+#live2d-bubble.err { color: #c0392b; background: rgba(255, 245, 245, .97); }
+#live2d-bubble.ok { border-left: 3px solid var(--primary, #ff8fb1); }
+
+#live2d-inrow { display: flex; gap: 5px; }
+#live2d-input {
+	flex: 1; min-width: 0;
+	padding: 7px 12px; border-radius: 16px;
+	border: 1px solid rgba(0, 0, 0, .12);
+	font-size: 12.5px; outline: none;
+	background: rgba(255, 255, 255, .96);
+	color: var(--text-color-high, #333);
+}
+#live2d-input:focus { border-color: var(--primary, #ff8fb1); box-shadow: 0 0 0 2px rgba(255,143,177,.18); }
+#live2d-send {
+	flex: 0 0 34px; width: 34px; height: 34px; border: 0; border-radius: 50%;
+	background: var(--primary, #ff8fb1); color: #fff;
+	font-size: 15px; cursor: pointer; line-height: 1;
+	display: flex; align-items: center; justify-content: center;
+}
+#live2d-send:hover { filter: brightness(1.08); }
+#live2d-send:active { transform: scale(.92); }
+
+@media (max-width: 768px) {
+	#live2d-chat { width: 200px; }
+}
+
+/* ===== 气泡里的 Markdown 样式 ✓ ===== */
+#live2d-bubble { max-height: 260px; }
+#live2d-bubble table {
+	width: 100%; border-collapse: collapse;
+	margin: 5px 0; font-size: 11.5px;
+}
+#live2d-bubble th, #live2d-bubble td {
+	border: 1px solid rgba(0,0,0,.12);
+	padding: 3px 6px; text-align: left;
+	vertical-align: top; word-break: break-word;
+}
+#live2d-bubble th { background: rgba(255,143,177,.14); font-weight: 600; white-space: nowrap; }
+#live2d-bubble tr:nth-child(even) td { background: rgba(0,0,0,.022); }
+#live2d-bubble b { color: var(--primary, #e0648a); }
+#live2d-bubble code {
+	background: rgba(0,0,0,.07); padding: 1px 5px;
+	border-radius: 4px; font-size: 11.5px;
+	font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+#live2d-bubble ul, #live2d-bubble ol { margin: 4px 0; padding-left: 18px; }
+#live2d-bubble li { margin: 2px 0; }
+#live2d-bubble .mdh { font-weight: 700; margin: 6px 0 3px; }
+#live2d-bubble .mdh.md1 { font-size: 14px; color: var(--primary, #e0648a); }
+#live2d-bubble .mdh.md2 { font-size: 13px; }
+#live2d-bubble .mdh.md3, #live2d-bubble .mdh.md4 { font-size: 12.5px; }
+#live2d-bubble hr { border: 0; border-top: 1px solid rgba(0,0,0,.1); margin: 6px 0; }
+#live2d-bubble blockquote {
+	margin: 4px 0; padding: 3px 9px;
+	border-left: 3px solid var(--primary, #ff8fb1);
+	background: rgba(255,143,177,.07); border-radius: 0 6px 6px 0;
+}
+#live2d-bubble a { color: var(--primary, #e0648a); }
+
+#live2d-bubble pre {
+	background: rgba(0,0,0,.055); border-radius: 6px;
+	padding: 7px 9px; margin: 5px 0; overflow-x: auto;
+}
+#live2d-bubble pre code {
+	background: none; padding: 0; font-size: 11px; line-height: 1.45;
+	white-space: pre; display: block;
+}
+
+/* ===== 历史对话抽屉 ✓ ===== */
+#live2d-histbtn {
+	flex: 0 0 34px; width: 34px; height: 34px; border: 0; border-radius: 50%;
+	background: rgba(0,0,0,.34); color: #fff; font-size: 14px; cursor: pointer;
+	display: flex; align-items: center; justify-content: center;
+}
+#live2d-histbtn:hover { background: var(--primary, #ff8fb1); }
+#live2d-hist {
+	display: none; position: absolute; left: 50%; bottom: 100%;
+	transform: translateX(-50%); width: 300px; max-height: 320px;
+	margin-bottom: 8px; border-radius: 12px; overflow: hidden;
+	background: rgba(255,255,255,.98);
+	box-shadow: 0 6px 24px rgba(0,0,0,.2);
+	pointer-events: auto; z-index: 27;
+	flex-direction: column;
+}
+#live2d-hist.on { display: flex; }
+#live2d-hist .hh {
+	display: flex; justify-content: space-between; align-items: center;
+	padding: 7px 11px; font-size: 12px; font-weight: 600;
+	background: var(--primary, #ff8fb1); color: #fff;
+}
+#live2d-hist .hh button {
+	border: 0; background: rgba(255,255,255,.22); color: #fff;
+	font-size: 11px; padding: 2px 8px; border-radius: 9px; cursor: pointer;
+}
+#live2d-hist .hh button:hover { background: rgba(255,255,255,.36); }
+#live2d-histlist { overflow-y: auto; padding: 7px; font-size: 12px; }
+#live2d-histlist .empty { text-align: center; color: #aaa; padding: 16px 0; font-size: 12px; }
+#live2d-histlist .hi {
+	border-bottom: 1px dashed rgba(0,0,0,.1);
+	padding: 6px 3px; margin-bottom: 4px;
+}
+#live2d-histlist .hi:last-child { border-bottom: 0; }
+#live2d-histlist .t { font-size: 10px; color: #aaa; margin-bottom: 3px; }
+#live2d-histlist .u { margin-bottom: 3px; }
+#live2d-histlist .a { color: #444; }
+#live2d-histlist .a table { width: 100%; border-collapse: collapse; font-size: 11px; margin: 3px 0; }
+#live2d-histlist .a th, #live2d-histlist .a td { border: 1px solid rgba(0,0,0,.1); padding: 2px 4px; }

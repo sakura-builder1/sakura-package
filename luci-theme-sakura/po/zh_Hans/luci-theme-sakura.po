@@ -1,0 +1,45 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: luci-theme-sakura\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-25 12:00+0800\n"
+"PO-Revision-Date: 2026-09-25 12:00+0800\n"
+"Last-Translator: sakura\n"
+"Language-Team: Chinese (Simplified)\n"
+"Language: zh_Hans\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Sakura Theme"
+msgstr "樱花主题"
+
+msgid "Mute background video"
+msgstr "静音背景视频"
+
+msgid "Log in"
+msgstr "登录"
+
+msgid "Username"
+msgstr "用户名"
+
+msgid "Password"
+msgstr "密码"
+
+msgid "No password set!"
+msgstr "未设置密码！"
+
+msgid "JavaScript required!"
+msgstr "需要 JavaScript！"
+
+msgid "Invalid username and/or password! Please try again."
+msgstr "用户名或密码错误，请重试。"
+
+msgid "Go to password configuration..."
+msgstr "前往密码设置..."
+
+msgid "There is no password set on this router. Please configure a root password to protect the web interface."
+msgstr "此路由器未设置 root 密码。请先设置密码以保护管理界面。"
+
+msgid "You must enable JavaScript in your browser or LuCI will not work properly."
+msgstr "您的浏览器需要启用 JavaScript，否则 LuCI 将无法正常工作。"

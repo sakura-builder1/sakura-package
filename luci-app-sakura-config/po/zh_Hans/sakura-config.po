@@ -1,0 +1,129 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: luci-app-sakura-config\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-25 21:20+0800\n"
+"PO-Revision-Date: 2026-09-25 21:20+0800\n"
+"Last-Translator: sakura\n"
+"Language-Team: Chinese (Simplified)\n"
+"Language: zh_Hans\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Sakura theme configuration"
+msgstr "樱花主题配置"
+
+msgid "Configure the Sakura theme: primary color, transparency, blur, mode and backgrounds."
+msgstr "配置樱花主题：主色、透明度、模糊、色彩模式与背景。"
+
+msgid "Theme configuration"
+msgstr "主题配置"
+
+msgid "Primary color"
+msgstr "主色调"
+
+msgid "A HEX color (default: #D6336C)."
+msgstr "HEX 颜色值（默认 #D6336C 樱花粉）。"
+
+msgid "Expecting: valid HEX color value"
+msgstr "请输入有效的 HEX 颜色值"
+
+msgid "Color mode"
+msgstr "色彩模式"
+
+msgid "Light"
+msgstr "浅色"
+
+msgid "Dark"
+msgstr "深色"
+
+msgid "Follow system"
+msgstr "跟随系统"
+
+msgid "Transparency"
+msgstr "透明度"
+
+msgid "Transparency of the content area, 0 - 1 (default: 0.3)."
+msgstr "内容区透明度，0 - 1（默认 0.3）。"
+
+msgid "Blur radius"
+msgstr "模糊半径"
+
+msgid "Background blur radius (px), 0 = off."
+msgstr "背景模糊半径（像素），0 表示关闭。"
+
+msgid "Online wallpaper"
+msgstr "在线壁纸"
+
+msgid "Disabled"
+msgstr "关闭"
+
+msgid "Bing daily"
+msgstr "Bing 每日一图"
+
+msgid "Background configuration"
+msgstr "背景配置"
+
+msgid "Upload images or videos, then pick one. Files are stored in <code>%s</code>."
+msgstr "上传图片或视频后选择即可。文件保存在 <code>%s</code>。"
+
+msgid "Login page background"
+msgstr "登录页背景"
+
+msgid "Dashboard background"
+msgstr "主页背景"
+
+msgid "Background"
+msgstr "背景"
+
+msgid "Upload Background"
+msgstr "上传背景"
+
+msgid "Delete Background"
+msgstr "删除背景"
+
+msgid "No background uploaded yet"
+msgstr "还没有上传背景"
+
+msgid "Please select a background first."
+msgstr "请先选择一个背景。"
+
+msgid "Background uploaded."
+msgstr "背景上传成功。"
+
+msgid "Background removed."
+msgstr "背景已删除。"
+
+msgid "Unsupported file type."
+msgstr "不支持的文件类型。"
+
+msgid "Please refresh the page to take effect."
+msgstr "请刷新页面以生效。"
+
+msgid "Refresh Now"
+msgstr "立即刷新"
+
+msgid "Sakura falling effect"
+msgstr "樱花飘落特效"
+
+msgid "Enable falling petals"
+msgstr "开启花瓣飘落"
+
+msgid "Show falling cherry blossom petals in the background."
+msgstr "在背景中显示飘落的樱花花瓣。"
+
+msgid "Enable"
+msgstr "开启"
+
+msgid "Disable"
+msgstr "关闭"
+
+msgid "Petal count"
+msgstr "花瓣数量"
+
+msgid "Number of petals, 1 - 200."
+msgstr "花瓣数量，1 - 200。"
+
+msgid "Sakura Theme Configuration"
+msgstr "樱花主题配置"

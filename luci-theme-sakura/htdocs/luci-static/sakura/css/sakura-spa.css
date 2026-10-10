@@ -1,0 +1,139 @@
+
+/* ============================================================================
+   樱花主题 · quickstart SPA 页面覆盖样式
+   2026-09-24  · 用 #app 前缀提高优先级（SPA 用的是 data-v 作用域选择器）
+   加载：main.htm 里 <link> 引入
+   ============================================================================ */
+#app, #app #main, #app #page, #app .page-container { background: transparent !important; }
+#app { color: #5A3446 !important; }
+
+/* ---- 面包屑 ---- */
+#app [class*="breadcrumb"], #app a[style*="breadcrumbs"] { color: #7A5566 !important; }
+
+/* ---- 标签栏：药丸 ---- */
+#app .tab-container, #app .tabs_box_g {
+	background: transparent !important; border: 0 !important; box-shadow: none !important;
+}
+#app .tabs_box_g .content-item, #app .tab-content_g {
+	background: rgba(255, 255, 255, var(--blur-opacity, 0.40)) !important;
+	border-radius: 999px !important;
+	color: #5A3446 !important;
+	border: 1px solid rgba(255, 255, 255, var(--blur-opacity, 0.6)) !important;
+	box-shadow: 0 2px 8px rgba(120,80,120,0.10) !important;
+}
+#app .tabs_box_g .content-item.active {
+	background: #FCB0CD !important; color: #6B2E4A !important;
+	box-shadow: 0 4px 12px rgba(252,176,205,0.5) !important;
+}
+
+/* ---- 主卡片（搜索+表格的容器）---- */
+#app .container, #app .device_container > .container {
+	background: rgba(255, 255, 255, var(--blur-opacity, 0.52)) !important;
+	-webkit-backdrop-filter: blur(24px) saturate(1.45) !important;
+	backdrop-filter: blur(24px) saturate(1.45) !important;
+	border: 1px solid rgba(255, 255, 255, var(--blur-opacity, 0.62)) !important;
+	border-radius: 20px !important;
+	box-shadow: 0 8px 28px rgba(120,80,120,0.13) !important;
+}
+/* 内层表格容器不要叠玻璃 */
+#app .custom-table-container, #app .custom-table-wrapper {
+	background: transparent !important; border: 0 !important; box-shadow: none !important;
+	border-radius: 0 !important;
+}
+/* ---- 表格 ---- */
+#app .custom-table { background: transparent !important; }
+#app .custom-table tr:nth-child(even) { background: rgba(255, 255, 255, var(--blur-opacity, 0.18)) !important; }
+#app .custom-table tr:nth-child(odd) { background: transparent !important; }
+#app .custom-table .last-row { background: transparent !important; box-shadow: none !important; }
+#app .custom-table th, #app .custom-table td { color: #5A3446 !important; border-color: rgba(255, 255, 255, var(--blur-opacity, 0.5)) !important; }
+
+/* ---- 搜索框 / 刷新按钮 ---- */
+#app .search_box, #app .search_container, #app .search_input_wrapper,
+#app .search_input, #app .refresh_button {
+	background: rgba(255, 255, 255, var(--blur-opacity, 0.55)) !important;
+	border: 1px solid rgba(255, 255, 255, var(--blur-opacity, 0.7)) !important;
+	border-radius: 12px !important;
+	color: #4A2436 !important;
+}
+#app .refresh_button:hover { background: #FCB0CD !important; }
+#app input { color: #4A2436 !important; }
+#app input::placeholder { color: #A08C98 !important; }
+
+/* ---- 修正：标签是 .tabs_box_g 里的 <button> ---- */
+#app .tabs_box_g > button {
+	background: rgba(255, 255, 255, var(--blur-opacity, 0.42)) !important;
+	border: 1px solid rgba(255, 255, 255, var(--blur-opacity, 0.62)) !important;
+	border-radius: 999px !important;
+	color: #5A3446 !important;
+	padding: .45rem 1.05rem !important;
+	margin-right: .45rem !important;
+	font-size: .86rem !important;
+	box-shadow: 0 2px 8px rgba(120, 80, 120, 0.10) !important;
+	-webkit-backdrop-filter: blur(10px) !important;
+	backdrop-filter: blur(10px) !important;
+}
+#app .tabs_box_g > button.active {
+	background: #FCB0CD !important;
+	color: #6B2E4A !important;
+	border-color: #FCB0CD !important;
+	box-shadow: 0 4px 12px rgba(252, 176, 205, 0.55) !important;
+}
+#app .tabs_box_g > button:hover { background: #FCB0CD !important; color: #6B2E4A !important; }
+/* 标签栏下划线/边框去掉 */
+#app .tabs_box_g { border-bottom: 0 !important; }
+
+/* ---- 修正1：内容容器不要药丸/玻璃（v1 误伤了 .tab-content_g）---- */
+#app .tab-content_g, #app .content-item {
+	background: transparent !important;
+	border-radius: 0 !important;
+	border: 0 !important;
+	box-shadow: none !important;
+}
+/* 内容区里的容器已经是玻璃卡了，内层不要再叠一层 */
+#app .content-item .container .container,
+#app .custom-table-container, #app .custom-table-wrapper {
+	background: transparent !important;
+	border: 0 !important;
+	box-shadow: none !important;
+	border-radius: 0 !important;
+}
+
+/* ---- 修正2：嵌套标签栏（.tab-button）→ 药丸 ---- */
+#app .tab-header { background: transparent !important; border: 0 !important; gap: .45rem !important; }
+#app .tab-header > .tab-button {
+	background: rgba(255, 255, 255, var(--blur-opacity, 0.42)) !important;
+	border: 1px solid rgba(255, 255, 255, var(--blur-opacity, 0.62)) !important;
+	border-radius: 999px !important;
+	color: #5A3446 !important;
+	padding: .4rem .95rem !important;
+	font-size: .85rem !important;
+	box-shadow: 0 2px 8px rgba(120, 80, 120, 0.10) !important;
+}
+#app .tab-header > .tab-button.active,
+#app .tab-header > .tab-button:hover {
+	background: #FCB0CD !important;
+	color: #6B2E4A !important;
+	border-color: #FCB0CD !important;
+}
+/* ---- 输入框 / 下拉框 → 玻璃 ---- */
+#app .item_box input:not(.switch__input), #app .item_box select,
+#app input[type="text"], #app input[type="password"], #app select, #app textarea {
+	background: rgba(255, 255, 255, var(--blur-opacity, 0.58)) !important;
+	color: #4A2436 !important;
+	border: 1px solid rgba(255, 255, 255, var(--blur-opacity, 0.72)) !important;
+	border-radius: 12px !important;
+	padding: .3rem .6rem !important;
+}
+/* ---- 主按钮（原来是蓝色）→ 主题粉 ---- */
+#app .add-button, #app .not_installed_btn {
+	background: var(--primary, #D6336C) !important;
+	color: #fff !important;
+	border: 0 !important;
+	border-radius: 12px !important;
+	padding: .45rem 1.1rem !important;
+	box-shadow: 0 4px 14px rgba(214, 51, 108, 0.35) !important;
+}
+#app .add-button:hover, #app .not_installed_btn:hover { background: #E0518C !important; }
+#app .add-button--danger { background: var(--primary, #D6336C) !important; }
+/* ---- 开关配色 ---- */
+#app .switch.is-checked .switch__button, #app .switch.is-checked .switch__core { background: #FCB0CD !important; }

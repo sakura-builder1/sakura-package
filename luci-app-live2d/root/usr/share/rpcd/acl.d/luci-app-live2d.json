@@ -1,0 +1,72 @@
+{
+	"luci-app-live2d": {
+		"description": "Live2D 看板娘设置",
+		"read": {
+			"uci": [
+				"live2d"
+			],
+			"file": {
+				"/www/luci-static/live2d/config.json": [
+					"read"
+				]
+			},
+			"ubus": {
+				"uci": [
+					"get",
+					"configs",
+					"changes"
+				],
+				"luci.sakura_live2d": [
+					"chat",
+					"tool",
+					"test",
+					"memory",
+					"remember",
+					"forget",
+					"history",
+					"append",
+					"clearhist"
+				]
+			}
+		},
+		"write": {
+			"uci": [
+				"live2d"
+			],
+			"file": {
+				"/www/luci-static/live2d/config.json": [
+					"write"
+				],
+				"/usr/libexec/live2d-sync": [
+					"exec"
+				]
+			},
+			"ubus": {
+				"uci": [
+					"set",
+					"add",
+					"delete",
+					"rename",
+					"reorder",
+					"commit",
+					"apply",
+					"confirm",
+					"rollback",
+					"save",
+					"revert"
+				],
+				"luci.sakura_live2d": [
+					"chat",
+					"tool",
+					"test",
+					"memory",
+					"remember",
+					"forget",
+					"history",
+					"append",
+					"clearhist"
+				]
+			}
+		}
+	}
+}

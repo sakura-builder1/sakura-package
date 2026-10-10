@@ -1,0 +1,14 @@
+{
+	"admin/services/live2d": {
+		"title": "Live2D 看板娘",
+		"order": 60,
+		"action": {
+			"type": "view",
+			"path": "live2d"
+		},
+		"depends": {
+			"acl": [ "luci-app-live2d" ],
+			"uci": { "live2d": true }
+		}
+	}
+}

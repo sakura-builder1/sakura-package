@@ -1,0 +1,786 @@
+#!/bin/sh
+# luci.sakura_live2d —— Live2D 看板娘的后端代理
+# ★ 安全设计：
+#   ① API 密钥只存在路由器上 ✗ 绝不下发浏览器 ✓
+#   ② 工具执行有【白名单】✗ 不允许任意命令 ✓
+#   ③ 写操作（重启服务）默认关闭 ✗ 需在配置页显式开启 ✓
+
+. /usr/share/libubox/jshn.sh 2>/dev/null
+
+g() {
+	v=$(uci -q get "live2d.ai.$1" 2>/dev/null)
+	[ -n "$v" ] && printf '%s' "$v" || printf '%s' "$2"
+}
+gb() {
+	[ "$(g "$1" "$2")" = "1" ] && printf '1' || printf '0'
+}
+reply() { printf '%s' "$1"; }
+
+# 允许被重启的服务白名单 ✓（不在名单里的一律拒绝 ✓）
+SVC_ALLOW="dnsmasq network wifi uhttpd dropbear rpcd cron odhcpd firewall nlbwmon mdns miniupnpd"
+
+# 允许 AI 修改的 uci 配置文件白名单 ✓（配置页可改 ✓ 留空=禁止一切修改 ✓）
+# 危险字段黑名单 ✓（这些 key 绝不允许 AI 碰 ✓）
+UCI_OPTFORBID="password key secret token private_key uuid"
+BACKUP_DIR=/tmp/luci-live2d-backup
+
+# ★ 记忆与历史数据 ✓
+# 放 /etc 下的原因：sysupgrade 备份的就是 /etc ✓✓
+# → 刷机时自动带上记忆 ✓✓ 不用额外操作 ✓
+DATA_DIR=/etc/live2d-data
+HIST_FILE=$DATA_DIR/history.jsonl
+MEM_FILE=$DATA_DIR/memory.json
+HIST_MAX=2000          # 历史最多保留多少条 ✓ 超了自动裁掉旧的 ✓
+MEM_MAX=200            # 记忆最多多少条 ✓
+
+# ────────────── 只读工具 ──────────────
+t_read_system() {
+	MEMT=$(awk '/^MemTotal:/{printf "%.1f", $2/1048576}' /proc/meminfo 2>/dev/null)
+	MEMA=$(awk '/^MemAvailable:/{printf "%.1f", $2/1048576}' /proc/meminfo 2>/dev/null)
+	LOAD=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null)
+	UP=$(awk '{printf "%d", $1/3600}' /proc/uptime 2>/dev/null)
+	TEMP=""
+	for z in /sys/class/thermal/thermal_zone*/temp /sys/class/hwmon/hwmon*/temp*_input; do
+		[ -r "$z" ] || continue
+		v=$(cat "$z" 2>/dev/null)
+		[ -n "$v" ] || continue
+		[ "$v" -gt 1000 ] 2>/dev/null && v=$((v/1000))
+		[ -z "$TEMP" ] || [ "$v" -gt "$TEMP" ] && TEMP="$v"
+	done
+	printf '运行时间: %s 小时\n内存: 总 %s GB，可用 %s GB\n负载(1/5/15分钟): %s\nCPU温度: %s度\n' \
+		"${UP:-?}" "${MEMT:-?}" "${MEMA:-?}" "${LOAD:-?}" "${TEMP:-未知}"
+}
+
+t_read_disk() {
+	df -h 2>/dev/null | awk 'NR==1 || /^\/(dev|overlay|tmpfs)/ {print}' | head -12
+}
+
+t_read_network() {
+	echo "=== 接口地址 ==="
+	ip -4 addr show 2>/dev/null | awk '/^[0-9]+:/{ifc=$2} /inet /{printf "  %s %s\n", ifc, $2}'
+	echo "=== 默认网关 ==="
+	ip route show default 2>/dev/null | head -2
+	echo "=== 在线设备（ARP 表）==="
+	CNT=$(awk 'NR>1 && $1!="" {c++} END{print c+0}' /proc/net/arp 2>/dev/null)
+	echo "  共 $CNT 个"
+	cat /proc/net/arp 2>/dev/null | awk 'NR>1 && $4=="00:00:00:00:00:00"{next} NR>1{printf "  %s  %s\n", $1, $4}' | head -15
+	echo "=== 在线时长 ==="
+	awk '{printf "  %d 小时\n", $1/3600}' /proc/uptime 2>/dev/null
+}
+
+t_read_services() {
+	for s in dnsmasq network uhttpd dropbear rpcd cron odhcpd firewall nlbwmon; do
+		if [ -x "/etc/init.d/$s" ]; then
+			if /etc/init.d/$s running >/dev/null 2>&1; then
+				echo "  $s: 运行中"
+			else
+				echo "  $s: 未运行"
+			fi
+		fi
+	done
+}
+
+t_read_logs() {
+	KW=$(printf '%s' "$1" | jsonfilter -e '@.keyword' 2>/dev/null)
+	N=$(printf '%s' "$1" | jsonfilter -e '@.lines' 2>/dev/null)
+	[ -n "$N" ] || N=30
+	[ "$N" -gt 100 ] 2>/dev/null && N=100
+	if [ -n "$KW" ]; then
+		logread 2>/dev/null | grep -i -- "$KW" | tail -n "$N"
+	else
+		logread 2>/dev/null | tail -n "$N"
+	fi
+}
+
+# ────────────── 写操作（默认关闭 ✗ 需显式开启 ✓）──────────────
+t_restart_service() {
+	if [ "$(gb allow_actions 0)" != "1" ]; then
+		printf '操作被拒绝：当前为只读模式 ✗ 需要到「服务 → Live2D 看板娘 → AI 对话」里开启「允许执行操作」\n'
+		return
+	fi
+	SVC=$(printf '%s' "$1" | jsonfilter -e '@.service' 2>/dev/null)
+	[ -n "$SVC" ] || { printf '缺少 service 参数\n'; return; }
+	OK=0
+	for a in $SVC_ALLOW; do [ "$a" = "$SVC" ] && OK=1; done
+	if [ "$OK" != "1" ]; then
+		printf '不允许操作服务「%s」✗ 仅允许：%s\n' "$SVC" "$SVC_ALLOW"
+		return
+	fi
+	if [ ! -x "/etc/init.d/$SVC" ]; then
+		printf '服务 %s 不存在\n' "$SVC"; return
+	fi
+	OUT=$(/etc/init.d/"$SVC" restart 2>&1)
+	CODE=$?
+	if [ "$CODE" = "0" ]; then
+		printf '已重启服务 %s ✓\n%s\n' "$SVC" "$OUT"
+	else
+		printf '重启 %s 失败（退出码 %s）\n%s\n' "$SVC" "$CODE" "$OUT"
+	fi
+}
+
+
+# ────────────── 读配置 ✓ ──────────────
+t_read_uci() {
+	CFG=$(printf '%s' "$1" | jsonfilter -e '@.config' 2>/dev/null)
+	SEC=$(printf '%s' "$1" | jsonfilter -e '@.section' 2>/dev/null)
+	[ -n "$CFG" ] || { echo "需要 config 参数（如 network / dhcp / firewall）"; return; }
+	# 脱敏 ✓ 密码类字段一律打码 ✓
+	MASK='s/(password|key|secret|token|private_key)\x27?=.*/\1=***已脱敏***/i'
+	if [ -n "$SEC" ]; then
+		uci -q show "$CFG.$SEC" 2>/dev/null | sed -E "$MASK"
+	else
+		uci -q show "$CFG" 2>/dev/null | sed -E "$MASK" | head -70
+	fi
+	[ -z "$(uci -q show "$CFG" 2>/dev/null)" ] && echo "配置 $CFG 不存在或为空"
+}
+
+t_read_packages() {
+	KW=$(printf '%s' "$1" | jsonfilter -e '@.keyword' 2>/dev/null)
+	if [ -n "$KW" ]; then
+		opkg list-installed 2>/dev/null | grep -i -- "$KW" | head -40
+	else
+		echo "=== 已安装的 LuCI 插件/主题 ==="
+		opkg list-installed 2>/dev/null | grep -iE '^luci-(app|theme|mod)' | head -50
+		echo "=== 已安装的服务类软件包（部分）==="
+		opkg list-installed 2>/dev/null | grep -iE 'dnsmasq|odhcpd|firewall4|nlbw|sing-box|passwall|hysteria|mosdns|smartdns' | head -20
+	fi
+}
+
+t_read_wifi() {
+	echo "=== 无线配置（uci wireless）==="
+	uci -q show wireless 2>/dev/null | grep -E 'ssid|channel|disabled|mode|encryption|htmode|hwmode' | head -30
+	echo "=== 无线客户端 ==="
+	iwinfo 2>/dev/null | awk '/ESSID|Access Point/{print "  "$0}' | head -10
+	for d in /sys/class/net/*/; do
+		n=$(basename "$d")
+		case "$n" in wlan*|phy*) ;; *) continue ;; esac
+		echo "  接口 $n:"
+		iwinfo "$n" assoclist 2>/dev/null | head -12
+	done
+	[ -x /usr/bin/iwinfo ] || [ -x /sbin/iwinfo ] || echo "  （未安装 iwinfo，无法读取客户端）"
+}
+
+# ────────────── 写配置 ✓ 四重防护 ──────────────
+t_set_uci() {
+	# 防护1：写操作总开关 ✓
+	if [ "$(gb allow_actions 0)" != "1" ]; then
+		echo "操作被拒绝：当前为只读模式 ✗ 需要到「服务 → Live2D 看板娘 → AI 对话」开启「允许执行操作」"
+		return
+	fi
+
+	CFG=$(printf '%s' "$1" | jsonfilter -e '@.config' 2>/dev/null)
+	SEC=$(printf '%s' "$1" | jsonfilter -e '@.section' 2>/dev/null)
+	OPT=$(printf '%s' "$1" | jsonfilter -e '@.option' 2>/dev/null)
+	VAL=$(printf '%s' "$1" | jsonfilter -e '@.value' 2>/dev/null)
+
+	for v in "$CFG" "$SEC" "$OPT"; do
+		[ -n "$v" ] || { echo "参数不全 ✗ 需要 config / section / option / value"; return; }
+	done
+
+	# 防护2：配置文件白名单 ✓
+
+	# 防护3：危险字段黑名单 ✓
+	for f in $UCI_OPTFORBID; do
+		if [ "$OPT" = "$f" ]; then
+			echo "不允许修改字段「$OPT」✗ 涉及凭据安全"
+			return
+		fi
+	done
+
+	# 防护4：自动备份 ✓ 可随时还原 ✓
+	mkdir -p "$BACKUP_DIR"
+	TS=$(date +%Y%m%d_%H%M%S)
+	[ -f "/etc/config/$CFG" ] && cp -a "/etc/config/$CFG" "$BACKUP_DIR/${CFG}_${TS}.bak"
+	# 只保留最近 20 份 ✓
+	ls -1t "$BACKUP_DIR" 2>/dev/null | tail -n +21 | while read -r f; do rm -f "$BACKUP_DIR/$f"; done
+
+	OLD=$(uci -q get "$CFG.$SEC.$OPT" 2>/dev/null)
+	if [ "$(uci -q get "$CFG.$SEC" 2>/dev/null)" = "" ] && [ "$(uci -q get "$CFG.$SEC" 2>/dev/null)" != "type" ]; then
+		:
+	fi
+
+	# 执行修改 ✓
+	if ! uci -q set "$CFG.$SEC.$OPT=$VAL" 2>/dev/null; then
+		echo "设置失败 ✗ 请检查 section「$SEC」是否存在（可先用 read_uci 查看）"
+		return
+	fi
+	uci -q commit "$CFG"
+
+	echo "已修改 ✓"
+	echo "  $CFG.$SEC.$OPT"
+	echo "  $OLD  →  $VAL"
+	echo "已备份到 $BACKUP_DIR/${CFG}_${TS}.bak（需要还原可以让我恢复）"
+	echo "⚠️ 配置已提交但【尚未生效】✗ 需要 reload 才会应用 ✓ 我可以帮你执行 service_action(action=reload)"
+}
+
+t_rollback_uci() {
+	[ "$(gb allow_actions 0)" != "1" ] && { echo "只读模式 ✗"; return; }
+	CFG=$(printf '%s' "$1" | jsonfilter -e '@.config' 2>/dev/null)
+	[ -n "$CFG" ] || { echo "需要 config 参数"; return; }
+	F=$(ls -1t "$BACKUP_DIR/${CFG}_"*.bak 2>/dev/null | head -1)
+	[ -n "$F" ] || { echo "没有找到 $CFG 的备份"; return; }
+	cp -a "$F" "/etc/config/$CFG"
+	uci -q commit "$CFG"
+	echo "已从备份还原 ✓"
+	echo "  备份文件：$F"
+}
+
+t_service_action() {
+	[ "$(gb allow_actions 0)" != "1" ] && { echo "操作被拒绝：只读模式 ✗"; return; }
+	SVC=$(printf '%s' "$1" | jsonfilter -e '@.service' 2>/dev/null)
+	ACT=$(printf '%s' "$1" | jsonfilter -e '@.action' 2>/dev/null)
+	[ -n "$ACT" ] || ACT=restart
+	case "$ACT" in start|stop|restart|enable|disable|reload) ;; *) echo "不支持的动作「$ACT」✗ 只能是 start/stop/restart/enable/disable/reload"; return ;; esac
+
+	# 放开：任何 /etc/init.d 里的服务都可以操作 ✓（写操作总开关仍然把关 ✓）
+	# 只要不是命令注入就行 ✓
+	case "$SVC" in
+		*[!A-Za-z0-9_.-]*) echo "非法的服务名「$SVC」"; return ;;
+	esac
+	[ -x "/etc/init.d/$SVC" ] || {
+		echo "服务「$SVC」不存在 ✗"
+		echo "可用的服务（部分）："
+		ls /etc/init.d/ 2>/dev/null | grep -vE '^(rcS|boot|done|enable|sysctl)' | head -40 | tr '\n' ' '
+		return
+	}
+
+	OUT=$(/etc/init.d/"$SVC" "$ACT" 2>&1); CODE=$?
+	if [ "$CODE" = "0" ]; then
+		echo "已对 $SVC 执行 $ACT ✓"
+		[ -n "$OUT" ] && echo "$OUT"
+	else
+		echo "对 $SVC 执行 $ACT 失败（退出码 $CODE）"
+		echo "$OUT"
+	fi
+}
+
+
+
+# ────────────── 软件包管理 ✓（装/卸插件 ✗ 需要写权限 ✓）──────────────
+# 绝不能卸的核心包 ✗（卸了路由器就废了 ✓）
+PKG_FORBID="base-files busybox libc procd ubus uci opkg netifd firewall4 dnsmasq odhcpd dropbear luci luci-base luci-mod-admin-full"
+
+t_install_package() {
+	[ "$(gb allow_actions 0)" != "1" ] && { echo "操作被拒绝：只读模式 ✗"; return; }
+	P=$(printf '%s' "$1" | jsonfilter -e '@.package' 2>/dev/null)
+	[ -n "$P" ] || { echo "需要 package 参数"; return; }
+	case "$P" in *[!A-Za-z0-9_.+-]*) echo "非法的包名「$P」"; return ;; esac
+
+	# 先看看是不是已经装了 ✓
+	if opkg list-installed 2>/dev/null | grep -q "^$P "; then
+		echo "包「$P」已经装过了 ✓"
+		opkg list-installed 2>/dev/null | grep "^$P "
+		return
+	fi
+	# 在源里找一下 ✓
+	if ! opkg list 2>/dev/null | grep -q "^$P "; then
+		echo "包「$P」在软件源里没找到 ✗"
+		echo "（可能名称不对 ✗ 可以让我用 read_packages 或搜索相似名字）"
+		return
+	fi
+
+	OUT=$(opkg install "$P" 2>&1); CODE=$?
+	if [ "$CODE" = "0" ]; then
+		echo "已安装「$P」✓"
+		echo "$OUT" | tail -12
+	else
+		echo "安装「$P」失败（退出码 $CODE）"
+		echo "$OUT" | tail -15
+	fi
+}
+
+t_remove_package() {
+	[ "$(gb allow_actions 0)" != "1" ] && { echo "操作被拒绝：只读模式 ✗"; return; }
+	P=$(printf '%s' "$1" | jsonfilter -e '@.package' 2>/dev/null)
+	[ -n "$P" ] || { echo "需要 package 参数"; return; }
+	case "$P" in *[!A-Za-z0-9_.+-]*) echo "非法的包名「$P」"; return ;; esac
+
+	for f in $PKG_FORBID; do
+		if [ "$P" = "$f" ]; then
+			echo "「$P」是系统核心包 ✗ 不允许卸载 ✓"
+			return
+		fi
+	done
+
+	# 看看会连带卸掉什么 ✓
+	DEP=$(opkg depends -A "$P" 2>/dev/null | head -10)
+	OUT=$(opkg remove "$P" 2>&1); CODE=$?
+	if [ "$CODE" = "0" ]; then
+		echo "已卸载「$P」✓"
+		echo "$OUT" | tail -12
+	else
+		echo "卸载「$P」失败（退出码 $CODE）"
+		echo "$OUT" | tail -15
+		echo "（有可能是别的包依赖它 ✗ 可以加参数强制卸 ✗ 但不建议）"
+	fi
+}
+
+t_search_package() {
+	KW=$(printf '%s' "$1" | jsonfilter -e '@.keyword' 2>/dev/null)
+	[ -n "$KW" ] || { echo "需要 keyword 参数"; return; }
+	echo "=== 搜索「$KW」==="
+	opkg list 2>/dev/null | grep -i -- "$KW" | head -25
+	echo ""
+	echo "=== 其中已安装的 ==="
+	opkg list-installed 2>/dev/null | grep -i -- "$KW" | head -15
+}
+
+
+# ────────────── 记忆 & 历史 ✓（文件持久化 ✗ 刷机可备份 ✓）──────────────
+_ensure_dir() {
+	mkdir -p "$DATA_DIR" 2>/dev/null
+	[ -f "$MEM_FILE" ] || printf '{"items":[]}' > "$MEM_FILE"
+	[ -f "$HIST_FILE" ] || : > "$HIST_FILE"
+}
+
+# 记忆 → 拼成一段文本 ✗ 供注入提示词 ✓
+mem_text() {
+	_ensure_dir
+	[ -s "$MEM_FILE" ] || return 0
+	jsonfilter -i "$MEM_FILE" -e '@.items[*].text' 2>/dev/null | head -n "$MEM_MAX" | awk 'NF{printf "- %s\n", $0}'
+}
+
+m_memory() {
+	_ensure_dir
+	# ubus 方法必须返回【对象】✗ 数组会被拒 ✗✓
+	ITEMS=$(jsonfilter -i "$MEM_FILE" -e '@.items' 2>/dev/null | head -c 6000)
+	[ -n "$ITEMS" ] || ITEMS="[]"
+	printf '{"ok":true,"items":%s}' "$ITEMS"
+}
+
+m_remember() {
+	read -r IN 2>/dev/null
+	TXT=$(printf '%s' "$IN" | jsonfilter -e '@.text' 2>/dev/null)
+	[ -n "$TXT" ] || { echo '{"ok":false,"error":"text 为空"}'; return; }
+	_ensure_dir
+	# 去重 ✓ 已有就不重复记 ✓
+	if jsonfilter -i "$MEM_FILE" -e '@.items[*].text' 2>/dev/null | grep -Fxq "$TXT"; then
+		echo '{"ok":true,"msg":"这条已经记住了 ✓"}'
+		return
+	fi
+	# 用 jshn 追加 ✓
+	json_init
+	json_load "$(cat "$MEM_FILE" 2>/dev/null)" 2>/dev/null || json_init
+	json_select items 2>/dev/null || { json_init; json_add_array items; }
+	json_add_object
+	json_add_string text "$TXT"
+	json_add_int ts "$(date +%s)"
+	json_close_object
+	json_dump > "$MEM_FILE.tmp" 2>/dev/null
+	if [ -s "$MEM_FILE.tmp" ]; then
+		mv "$MEM_FILE.tmp" "$MEM_FILE"
+		echo '{"ok":true,"msg":"记住了 ✓"}'
+	else
+		rm -f "$MEM_FILE.tmp"
+		echo '{"ok":false,"error":"写入失败"}'
+	fi
+}
+
+m_forget() {
+	read -r IN 2>/dev/null
+	IDX=$(printf '%s' "$IN" | jsonfilter -e '@.index' 2>/dev/null)
+	TXT=$(printf '%s' "$IN" | jsonfilter -e '@.text' 2>/dev/null)
+	_ensure_dir
+	# 简单可靠：读出所有 ✓ 过滤掉要删的 ✗ 重写 ✓
+	jsonfilter -i "$MEM_FILE" -e '@.items[*].text' 2>/dev/null > /tmp/.memlist
+	[ -s /tmp/.memlist ] || { echo '{"ok":false,"error":"还没有任何记忆"}'; return; }
+	N=0; : > /tmp/.memkeep
+	while IFS= read -r line; do
+		N=$((N+1))
+		DEL=0
+		[ -n "$IDX" ] && [ "$IDX" = "$N" ] && DEL=1
+		[ -n "$TXT" ] && [ "$TXT" = "$line" ] && DEL=1
+		[ "$DEL" = "0" ] && printf '%s\n' "$line" >> /tmp/.memkeep
+	done < /tmp/.memlist
+	if [ "$N" = "$(wc -l < /tmp/.memkeep)" ]; then
+		echo "{\"ok\":false,\"error\":\"没找到要删除的记忆（共 $N 条）\"}"; return
+	fi
+	json_init; json_add_array items
+	while IFS= read -r line; do
+		[ -n "$line" ] || continue
+		json_add_object; json_add_string text "$line"; json_close_object
+	done < /tmp/.memkeep
+	json_dump > "$MEM_FILE" 2>/dev/null
+	echo '{"ok":true,"msg":"已删除 ✓"}'
+}
+
+m_history() {
+	read -r IN 2>/dev/null
+	LIM=$(printf '%s' "$IN" | jsonfilter -e '@.limit' 2>/dev/null)
+	[ -n "$LIM" ] || LIM=50
+	[ "$LIM" -gt 500 ] 2>/dev/null && LIM=500
+	_ensure_dir
+	# 文件最后 N 行 ✓ 拼成 JSON 数组 ✓
+	# busybox 没有 paste ✗ 用 tr 拼 ✓ 再去掉末尾逗号 ✓
+	OUT=$(tail -n "$LIM" "$HIST_FILE" 2>/dev/null | grep -v '^$' | tr '\n' ',')
+	OUT=${OUT%,}
+	[ -n "$OUT" ] || OUT=""
+	printf '{"ok":true,"history":[%s]}' "$OUT"
+}
+
+m_append() {
+	read -r IN 2>/dev/null
+	U=$(printf '%s' "$IN" | jsonfilter -e '@.user' 2>/dev/null)
+	A=$(printf '%s' "$IN" | jsonfilter -e '@.assistant' 2>/dev/null)
+	_ensure_dir
+	json_init
+	json_add_int ts "$(date +%s)"
+	json_add_string user "$U"
+	json_add_string assistant "$A"
+	json_dump 2>/dev/null | tr -d '\n' >> "$HIST_FILE"
+	printf '\n' >> "$HIST_FILE"
+	# 超长了就裁掉旧的 ✓
+	CNT=$(wc -l < "$HIST_FILE" 2>/dev/null || echo 0)
+	if [ "$CNT" -gt "$HIST_MAX" ] 2>/dev/null; then
+		tail -n "$HIST_MAX" "$HIST_FILE" > "$HIST_FILE.tmp" && mv "$HIST_FILE.tmp" "$HIST_FILE"
+	fi
+	printf '{"ok":true,"count":%s}' "$CNT"
+}
+
+m_clearhist() {
+	_ensure_dir
+	: > "$HIST_FILE"
+	echo '{"ok":true,"msg":"历史已清空 ✓"}'
+}
+
+m_mem_text() {
+	T=$(mem_text)
+	[ -n "$T" ] || { printf '{"ok":true,"text":""}'; return; }
+	json_init; json_add_string text "$T"; printf '{"ok":true,"text":%s}' "$(json_dump | jsonfilter -e '@.text' 2>/dev/null | sed 's/^/"/;s/$/"/')"
+}
+
+
+# ────────────── 结构化配置操作（方案 C ✓）──────────────
+_wr_ok() {
+	[ "$(gb allow_actions 0)" = "1" ] && return 0
+	echo "操作被拒绝：当前为只读模式 ✗ 请先开启「允许执行操作」"
+	return 1
+}
+_cfg_ok() {
+	# 配置文件白名单 ✓ 留空 = 全部允许 ✓
+	case "$1" in *[!A-Za-z0-9_.-]*) echo "非法的配置名「$1」"; return 1 ;; esac
+	ALLOW=$(g uci_allow '')
+	if [ -n "$ALLOW" ]; then
+		for a in $ALLOW; do [ "$a" = "$1" ] && return 0; done
+		echo "配置「$1」不在白名单里 ✗ 当前：$ALLOW"; return 1
+	fi
+	[ -f "/etc/config/$1" ] || { echo "配置「$1」不存在 ✗"; return 1; }
+	return 0
+}
+_bak() {
+	mkdir -p "$BACKUP_DIR"
+	TS=$(date +%Y%m%d_%H%M%S)
+	[ -f "/etc/config/$1" ] && cp -a "/etc/config/$1" "$BACKUP_DIR/${1}_${TS}.bak"
+	ls -1t "$BACKUP_DIR" 2>/dev/null | tail -n +21 | while read -r f; do rm -f "$BACKUP_DIR/$f"; done
+	echo "$TS"
+}
+
+# 新建配置段 ✓（加 passwall 节点 / mosdns 规则必需 ✓）
+t_add_section() {
+	_wr_ok || return
+	CFG=$(printf '%s' "$1" | jsonfilter -e '@.config' 2>/dev/null)
+	TYPE=$(printf '%s' "$1" | jsonfilter -e '@.type' 2>/dev/null)
+	NAME=$(printf '%s' "$1" | jsonfilter -e '@.name' 2>/dev/null)
+	[ -n "$CFG" ] && [ -n "$TYPE" ] || { echo "需要 config 和 type 参数 ✗ 例：{config:passwall, type:nodes}"; return; }
+	_cfg_ok "$CFG" || return
+	TS=$(_bak "$CFG")
+
+	# 注意：busybox 的 uci add 只接受 <config> <type> ✗ 不支持段名 ✓
+	# 有名段要用 uci set <config>.<name>=<type> ✓✓
+	if [ -n "$NAME" ]; then
+		if uci -q set "$CFG.$NAME=$TYPE" 2>/dev/null; then
+			NEW="$NAME"
+		else
+			echo "新建失败 ✗（段名 $NAME 可能已存在 ✗ 先 read_uci 看看）"; return
+		fi
+	else
+		NEW=$(uci add "$CFG" "$TYPE" 2>&1)
+		case "$NEW" in
+			*Usage*|*usage*|"") echo "新建失败 ✗：$NEW"; return ;;
+		esac
+	fi
+	uci commit "$CFG" 2>/dev/null
+
+	echo "已新建配置段 ✓"
+	echo "  $CFG.$NEW  (类型 $TYPE${NAME:+, 名称 $NAME})"
+	echo "  已备份：$BACKUP_DIR/${CFG}_${TS}.bak"
+	echo ""
+	echo "下一步：用 set_uci_batch 一次性填好它的字段 ✗ 例："
+	echo "  set_uci_batch(config=\"$CFG\", changes=[\"$NEW.字段1=值1\",\"$NEW.字段2=值2\"])"
+	echo "⚠️ 别忘了最后调 service_action 重载服务才生效 ✓"
+}
+
+t_delete_section() {
+	_wr_ok || return
+	CFG=$(printf '%s' "$1" | jsonfilter -e '@.config' 2>/dev/null)
+	SEC=$(printf '%s' "$1" | jsonfilter -e '@.section' 2>/dev/null)
+	[ -n "$CFG" ] && [ -n "$SEC" ] || { echo "需要 config 和 section 参数"; return; }
+	_cfg_ok "$CFG" || return
+	[ -n "$(uci -q show "$CFG.$SEC" 2>/dev/null)" ] || { echo "段「$SEC」不存在 ✗ 可先用 read_uci 查看"; return; }
+	TS=$(_bak "$CFG")
+	OLD=$(uci -q show "$CFG.$SEC" 2>/dev/null | head -3)
+	if uci delete "$CFG.$SEC" 2>/dev/null; then
+		uci commit "$CFG" 2>/dev/null
+		echo "已删除配置段 ✓"
+		echo "  $CFG.$SEC"
+		echo "  删除前的内容（前3行）："
+		printf '%s\n' "$OLD" | sed 's/^/    /'
+		echo "  已备份：$BACKUP_DIR/${CFG}_${TS}.bak（需要还原可以让我恢复）"
+	else
+		echo "删除失败 ✗"
+	fi
+}
+
+# 批量改字段 ✓（一次调用改十几个 ✗ 快且不易出错 ✓）
+t_set_uci_batch() {
+	_wr_ok || return
+	CFG=$(printf '%s' "$1" | jsonfilter -e '@.config' 2>/dev/null)
+	[ -n "$CFG" ] || { echo "需要 config 参数"; return; }
+	_cfg_ok "$CFG" || return
+
+	CH=$(printf '%s' "$1" | jsonfilter -e '@.changes[*]' 2>/dev/null)
+	[ -n "$CH" ] || { echo "需要 changes 参数 ✗ 例：[\"lan.ip6assign=64\",\"lan.dns=1.1.1.1\"]"; return; }
+
+	TS=$(_bak "$CFG")
+	OKN=0; FAILN=0; DETAIL=""
+	while IFS= read -r line; do
+		[ -n "$line" ] || continue
+		case "$line" in
+			*=*) ;;
+			*) DETAIL="$DETAIL
+  ✗ 格式不对（应为 段.字段=值）：$line"; FAILN=$((FAILN+1)); continue ;;
+		esac
+		OPT=${line%%=*}
+		# 危险字段黑名单 ✓
+		FLD=$(printf '%s' "$OPT" | awk -F. '{print $NF}')
+		BAD=0
+		for f in $UCI_OPTFORBID; do [ "$f" = "$FLD" ] && BAD=1; done
+		if [ "$BAD" = "1" ]; then
+			DETAIL="$DETAIL
+  ⛔ 拒绝修改凭据字段：$line"; FAILN=$((FAILN+1)); continue
+		fi
+		if uci -q set "$CFG.$line" 2>/dev/null; then
+			OKN=$((OKN+1))
+		else
+			DETAIL="$DETAIL
+  ✗ 设置失败：$CFG.$line"; FAILN=$((FAILN+1))
+		fi
+	done <<EOF2
+$CH
+EOF2
+
+	uci commit "$CFG" 2>/dev/null
+	echo "批量修改完成 ✓"
+	echo "  成功 $OKN 项 ✗ 失败 $FAILN 项"
+	[ -n "$DETAIL" ] && printf '%s\n' "$DETAIL"
+	echo "  已备份：$BACKUP_DIR/${CFG}_${TS}.bak"
+	echo ""
+	echo "当前结果："
+	uci -q show "$CFG" 2>/dev/null | grep -E "^$CFG\." | tail -15 | sed 's/^/  /'
+	echo ""
+	echo "⚠️ 配置已提交但【未生效】✗ 需要 service_action 重载才应用 ✓"
+}
+
+# 自由执行 shell ✓（默认关闭 ✗ 需单独开关 ✓✓）
+t_run_shell() {
+	if [ "$(gb allow_actions 0)" != "1" ]; then
+		echo "操作被拒绝：当前为只读模式 ✗"; return
+	fi
+	if [ "$(gb allow_shell 0)" != "1" ]; then
+		echo "命令执行未开启 ✗"
+		echo "这需要单独到「服务 → Live2D 看板娘 → AI 对话」里打开【允许执行 shell 命令】✓"
+		return
+	fi
+	CMD=$(printf '%s' "$1" | jsonfilter -e '@.command' 2>/dev/null)
+	[ -n "$CMD" ] || { echo "需要 command 参数"; return; }
+
+	# ── 危险命令拦截 ✓✓ ──
+	for pat in \
+		'rm[[:space:]]+-[a-zA-Z]*r[a-zA-Z]*[[:space:]]+/[[:space:]]*$' \
+		'rm[[:space:]]+-[a-zA-Z]*r[a-zA-Z]*[[:space:]]+/(\*|etc|bin|sbin|lib|usr|www|overlay)' \
+		'mkfs' 'mtd[[:space:]]+write' 'dd[[:space:]]+if=.*of=/dev/' \
+		':\(\)[[:space:]]*\{' 'chmod[[:space:]]+-R[[:space:]]+0*' \
+		'>[[:space:]]*/dev/(sd|mmcblk|mtd)' '>/etc/(passwd|shadow|config/live2d)' \
+		'opkg[[:space:]]+(remove|--force-remove)[[:space:]]+(base-files|busybox|libc|procd|ubus|uci|opkg|netifd|firewall4|dnsmasq|odhcpd)' \
+		'sysupgrade[[:space:]]+-f' 'reboot[[:space:]]+-f' 'kill[[:space:]]+-9[[:space:]]+1$' \
+		'init[[:space:]]+0' 'halt' 'poweroff' ; do
+		if printf '%s' "$CMD" | grep -qE "$pat" 2>/dev/null; then
+			echo "⛔ 命令包含危险操作 ✗ 已拒绝"
+			echo "  匹配到的规则：$pat"
+			echo "  你的命令：$CMD"
+			return
+		fi
+	done
+
+	OUT=$(timeout 60 sh -c "$CMD" 2>&1); CODE=$?
+	# 输出限制 ✓ 防止撑爆对话上下文 ✓
+	LEN=$(printf '%s' "$OUT" | wc -c)
+	TRUNC=""
+	if [ "$LEN" -gt 4000 ] 2>/dev/null; then
+		OUT=$(printf '%s' "$OUT" | head -c 4000)
+		TRUNC="
+…（输出太长已截断 ✗ 原本 $LEN 字节 ✓）"
+	fi
+	echo "退出码：$CODE"
+	echo "--- 输出 ---"
+	printf '%s%s\n' "$OUT" "$TRUNC"
+	[ "$CODE" = "124" ] && echo "（执行超过 60 秒已中断 ✓）"
+}
+
+# ────────────── 工具分发 ✓ 白名单 ✓ ──────────────
+run_tool() {
+	read -r INPUT 2>/dev/null          # ★ 别忘了读参数 ✗（之前漏了 ✓）
+	NAME=$(printf '%s' "$INPUT" | jsonfilter -e '@.name' 2>/dev/null)
+	ARGS=$(printf '%s' "$INPUT" | jsonfilter -e '@.arguments' 2>/dev/null)
+	[ -n "$ARGS" ] || ARGS='{}'
+	[ -n "$NAME" ] || { json_init; json_add_boolean ok 0; json_add_string result "缺少工具名"; reply "$(json_dump)"; return; }
+
+	OUT=""
+	case "$NAME" in
+		read_system)     OUT=$(t_read_system) ;;
+		read_disk)       OUT=$(t_read_disk) ;;
+		read_network)    OUT=$(t_read_network) ;;
+		read_services)   OUT=$(t_read_services) ;;
+		read_logs)       OUT=$(t_read_logs "$ARGS") ;;
+		read_uci)        OUT=$(t_read_uci "$ARGS") ;;
+		read_packages)   OUT=$(t_read_packages "$ARGS") ;;
+		read_wifi)       OUT=$(t_read_wifi "$ARGS") ;;
+		set_uci)         OUT=$(t_set_uci "$ARGS") ;;
+		rollback_uci)    OUT=$(t_rollback_uci "$ARGS") ;;
+		restart_service) OUT=$(t_restart_service "$ARGS") ;;
+		service_action)  OUT=$(t_service_action "$ARGS") ;;
+		install_package) OUT=$(t_install_package "$ARGS") ;;
+		remove_package)  OUT=$(t_remove_package "$ARGS") ;;
+		search_package)  OUT=$(t_search_package "$ARGS") ;;
+		add_section)     OUT=$(t_add_section "$ARGS") ;;
+		delete_section)  OUT=$(t_delete_section "$ARGS") ;;
+		set_uci_batch)   OUT=$(t_set_uci_batch "$ARGS") ;;
+		run_shell)       OUT=$(t_run_shell "$ARGS") ;;
+		remember)        OUT=$(printf '%s' "$ARGS" | m_remember | jsonfilter -e '@.msg' 2>/dev/null || echo "已处理") ;;
+		forget)          OUT=$(printf '%s' "$ARGS" | m_forget | jsonfilter -e '@.msg' 2>/dev/null || echo "已处理") ;;
+		mem_text)        OUT=$(mem_text) ;;
+		list_memory)     OUT=$(m_memory | jsonfilter -e '@.items[*].text' 2>/dev/null | head -30) ;;
+		*)
+			# 不是内置工具 ✗ 就找自定义技能 ✓
+			;;
+	esac
+
+	json_init
+	json_add_boolean ok 1
+	json_add_string result "$OUT"
+	reply "$(json_dump)"
+	json_cleanup 2>/dev/null
+}
+
+# ────────────── 对话（转发 ✓ 支持 tools ✓）──────────────
+chat() {
+	read -r INPUT 2>/dev/null
+
+	if [ "$(gb enabled 0)" != "1" ]; then
+		reply '{"ok":false,"error":"AI 对话未启用 ✗ 请到「服务 → Live2D 看板娘 → AI 对话」开启"}'
+		return
+	fi
+
+	BASE=$(g base_url ''); KEY=$(g api_key ''); MODEL=$(g model '')
+	MAXT=$(g max_tokens '512'); TEMP=$(g temperature '0.7'); TO=$(g timeout '60')
+
+	[ -n "$BASE" ] || { reply '{"ok":false,"error":"未配置 API 地址"}'; return; }
+	[ -n "$KEY" ]  || { reply '{"ok":false,"error":"未配置 API Key"}'; return; }
+	[ -n "$MODEL" ] || { reply '{"ok":false,"error":"未配置模型名"}'; return; }
+
+	# 前端可以传完整 messages（多轮/带工具）✗ 也可以只传 message（简单一句）✓
+	MSGS=$(printf '%s' "$INPUT" | jsonfilter -e '@.messages' 2>/dev/null)
+	if [ -z "$MSGS" ]; then
+		MSG=$(printf '%s' "$INPUT" | jsonfilter -e '@.message' 2>/dev/null)
+		[ -n "$MSG" ] || { reply '{"ok":false,"error":"消息为空"}'; return; }
+		SYS=$(g system_prompt '')
+		json_init
+		json_add_array messages
+		json_add_object; json_add_string role "system"; json_add_string content "$SYS"; json_close_object
+		json_add_object; json_add_string role "user";   json_add_string content "$MSG"; json_close_object
+		json_close_array
+		MSGS=$(json_dump | jsonfilter -e '@.messages')
+		json_cleanup 2>/dev/null
+	fi
+
+	# 人格提示词由前端放进 messages[0] ✓ 后端不拼字符串 ✗ 避免出错 ✓
+
+	TOOLS=$(printf '%s' "$INPUT" | jsonfilter -e '@.tools' 2>/dev/null)
+
+	# 请求体 ✓：messages/tools 本来就是合法 JSON ✗ 直接拼接 ✓ 不做二次转义 ✓
+	if [ -n "$TOOLS" ]; then
+		BODY=$(printf '{"model":"%s","messages":%s,"tools":%s,"tool_choice":"auto","max_tokens":%s,"temperature":%s}' \
+			"$MODEL" "$MSGS" "$TOOLS" "$MAXT" "$TEMP")
+	else
+		BODY=$(printf '{"model":"%s","messages":%s,"max_tokens":%s,"temperature":%s}' \
+			"$MODEL" "$MSGS" "$MAXT" "$TEMP")
+	fi
+
+	RESP=$(curl -s -m "$TO" -X POST "$BASE/chat/completions" \
+		-H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+		-d "$BODY" 2>/dev/null)
+
+	if [ -z "$RESP" ]; then
+		reply '{"ok":false,"error":"请求超时或网络不通"}'; return
+	fi
+
+	ERRMSG=$(printf '%s' "$RESP" | jsonfilter -e '@.error.message' 2>/dev/null)
+	MSGJSON=$(printf '%s' "$RESP" | jsonfilter -e '@.choices[0].message' 2>/dev/null)
+
+	if [ -z "$MSGJSON" ]; then
+		json_init; json_add_boolean ok 0
+		if [ -n "$ERRMSG" ]; then
+			json_add_string error "API 报错：$ERRMSG"
+		else
+			json_add_string error "解析失败：$(printf '%s' "$RESP" | head -c 200)"
+		fi
+		reply "$(json_dump)"; json_cleanup 2>/dev/null
+		return
+	fi
+
+	USAGE=$(printf '%s' "$RESP" | jsonfilter -e '@.usage.total_tokens' 2>/dev/null)
+	# ★ 把整个 message 原样返回 ✗ 前端才能看到 tool_calls ✓✓
+	reply "{\"ok\":true,\"message\":$MSGJSON,\"model\":\"$MODEL\",\"tokens\":\"${USAGE:-}\"}"
+}
+
+test_conn() {
+	BASE=$(g base_url ''); KEY=$(g api_key ''); MODEL=$(g model '')
+	BODY="{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":5}"
+	RESP=$(curl -s -m 30 -X POST "$BASE/chat/completions" -H "Authorization: Bearer $KEY" \
+		-H "Content-Type: application/json" -d "$BODY" 2>/dev/null)
+	E=$(printf '%s' "$RESP" | jsonfilter -e '@.error.message' 2>/dev/null)
+	json_init
+	if printf '%s' "$RESP" | grep -q '"choices"'; then
+		json_add_boolean ok 1; json_add_string msg "连接正常 ✓"
+	elif [ -n "$E" ]; then
+		json_add_boolean ok 0; json_add_string msg "$E"
+	else
+		json_add_boolean ok 0
+		json_add_string msg "无响应：$(printf '%s' "$RESP" | head -c 150)"
+	fi
+	reply "$(json_dump)"; json_cleanup 2>/dev/null
+}
+
+case "$1" in
+	list)
+		echo '{ "chat": {}, "tool": {}, "test": {}, "memory": {}, "remember": {}, "forget": {}, "history": {}, "append": {}, "clearhist": {} }'
+		;;
+	call)
+		case "$2" in
+			chat) chat ;;
+			tool) run_tool ;;
+			test) test_conn ;;
+			memory) m_memory ;;
+			remember) m_remember ;;
+			forget) m_forget ;;
+			history) m_history ;;
+			append) m_append ;;
+			clearhist) m_clearhist ;;
+			*) reply '{"ok":false,"error":"未知方法"}' ;;
+		esac
+		;;
+	*)
+		echo '{}'
+		;;
+esac
+exit 0

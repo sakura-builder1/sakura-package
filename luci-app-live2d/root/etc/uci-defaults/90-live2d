@@ -1,0 +1,62 @@
+#!/bin/sh
+# Live2D 看板娘初始化
+# ★ 关键：只在【配置不存在时】创建 ✗ 这样升级插件不会覆盖用户设置 ✓✓
+#   （包括 AI 对话的 API Key ✓ 不会丢 ✓）
+
+CFG=/etc/config/live2d
+if [ ! -f "$CFG" ]; then
+	cat > "$CFG" <<'EOF'
+config live2d 'main'
+	option enabled '1'
+	option size '240'
+	option model 'rice/Rice.model3.json'
+	option draggable '1'
+	option clickable '1'
+	option auto_idle '1'
+	option only_home '1'
+
+config llm 'ai'
+	option enabled '0'
+	option base_url ''
+	option api_key ''
+	option model ''
+	option system_prompt '你是樱花主题路由器看板娘「小樱」，说话简洁温柔爱用颜文字。回答支持 Markdown（表格/加粗/列表/代码块）✗ 但别太长 ✗ 用要点和表格代替大段文字。'
+	option max_tokens '1024'
+	option temperature '0.7'
+	option timeout '60'
+	option uci_allow ''
+	option allow_shell '0'
+EOF
+fi
+
+# 老版本升级：补齐缺失的 ai 段 ✓（不动已有值 ✓）
+if ! uci -q get live2d.ai >/dev/null 2>&1; then
+	uci set live2d.ai=llm
+	uci set live2d.ai.enabled='0'
+	uci set live2d.ai.base_url=''
+	uci set live2d.ai.api_key=''
+	uci set live2d.ai.model=''
+	uci set live2d.ai.max_tokens='1024'
+	uci set live2d.ai.temperature='0.7'
+	uci set live2d.ai.timeout='60'
+	uci set live2d.ai.uci_allow=''
+	uci set live2d.ai.allow_shell='0'
+	uci commit live2d
+fi
+
+# 老版本升级：补齐 only_home ✓（★ 默认开启 ✓ 不动已有值 ✓）
+if ! uci -q get live2d.main.only_home >/dev/null 2>&1; then
+	uci set live2d.main.only_home='1'
+	uci commit live2d
+fi
+
+# 同步前端用的 config.json ✓
+[ -x /usr/libexec/live2d-sync ] && /usr/libexec/live2d-sync
+
+# 兜底 cron：每分钟同步一次 ✓（幂等 ✗ 内容没变不写盘 ✓）
+CRON=/etc/crontabs/root
+touch "$CRON"
+grep -q 'live2d-sync' "$CRON" || echo '* * * * * /usr/libexec/live2d-sync' >> "$CRON"
+/etc/init.d/cron reload >/dev/null 2>&1
+
+exit 0
