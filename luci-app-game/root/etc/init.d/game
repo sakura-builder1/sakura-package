@@ -1,0 +1,29 @@
+
+#!/bin/sh /etc/rc.common
+# 让 /opt/game 整棵树能被 uhttpd 访问（roms/covers/cheats/saves/assets 一次搞定）
+
+# ── 配置自愈：文件丢了自动重建 ✓（conffiles 之外的第二道保险 ✓）──
+[ -f /etc/config/game ] || {
+	mkdir -p /etc/config
+	cat > /etc/config/game <<'EOFCFG'
+
+config game 'main'
+	option enabled '1'
+	option game_dir '/opt/game'
+	option rom_dir '/opt/game/roms'
+	option web_dir '/www/luci-static/game/fs'
+	option use_local_assets '1'
+	option asset_source 'https://cdn.emulatorjs.org/stable/data/'
+	option show_covers '1'
+	option show_recent '1'
+EOFCFG
+}
+
+
+START=99
+STOP=10
+USE_PROCD=1
+
+start_service()  { /usr/libexec/game-mount; }
+stop_service()   { /usr/libexec/game-unmount; }
+reload_service() { /usr/libexec/game-mount; }
