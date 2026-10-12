@@ -25,7 +25,7 @@ make menuconfig
 | luci-app-sakura-config | Sakura theme settings | 樱花主题配置（主色 · 模糊半径） |
 | luci-app-dlna-player | DLNA music player | DLNA 音乐播放器 |
 | luci-app-wolplus | Enhanced Wake-on-LAN | 网络唤醒增强 |
-| luci-app-game | Retro game station, play in browser | 怀旧游戏站（浏览器模拟器 · 免客户端 · 手柄 / 金手指 / 即时存档） |
+| luci-app-game | Retro game station, play in browser (AI-assisted) | 怀旧游戏站（浏览器模拟器 · 免客户端 · 手柄 / 金手指 / 存档 · AI 辅助开发） |
 | luci-theme-sakura | Sakura anime theme | 樱花二次元主题（粉白毛玻璃） |
 
 ## 源码同步说明
