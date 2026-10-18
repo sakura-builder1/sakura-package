@@ -1,7 +1,5 @@
 # sakura-package
 
-自研 OpenWrt 插件与主题源码合集。
-
 ## 使用
 
 **一键命令**
@@ -27,15 +25,3 @@ make menuconfig
 | luci-app-wolplus | Enhanced Wake-on-LAN | 网络唤醒增强 |
 | luci-app-game | Retro game station, play in browser (AI-assisted) | 怀旧游戏站（浏览器模拟器 · 免客户端 · 手柄 / 金手指 / 存档 · AI 辅助开发） |
 | luci-theme-sakura | Sakura anime theme | 樱花二次元主题（粉白毛玻璃） |
-
-## 源码同步说明
-
-本仓库是各插件源码的**自动镜像合集**，由同步脚本在各插件仓库提交后自动镜像过来。
-
-主源码在**独立仓库**中维护，本仓库内对应目录为副本，**请勿直接改这里**：
-
-| 插件 | 独立仓库（主源码） |
-| --- | --- |
-| luci-app-game | [sakura-builder1/luci-app-game](https://github.com/sakura-builder1/luci-app-game) |
-
-> 其余插件目前仅在本仓库内维护。
