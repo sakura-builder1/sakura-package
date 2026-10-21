@@ -71,3 +71,27 @@ opkg install luci-app-live2d_*.ipk
 ```
 
 安装后到「服务 → Live2D 看板娘」配置。
+
+## 上传模型（2026-10-21 新增）
+
+**Live2D 看板娘 → 基本设置 → 最下面「上传模型」**
+
+1. 把模型文件夹（含 `xxx.model3.json` + `.moc3` + `motions/`）打成 **zip**
+   - 压缩包里可以有外层文件夹，也可以直接打包内容
+   - 建议用 **7-Zip / Bandizip 并以 UTF-8 编码** 打包，或直传解压后文件名可能乱码
+2. 选 zip → 「上传并安装」（≤64MB，分块上传 + 进度条）
+3. 后端自动校验 → 解压到 `/www/luci-static/live2d/models/<压缩包名>/`
+   → 加进模型列表 → 自动切换过去
+
+细节：
+
+- 校验：zip 魔数、大小上限、路径穿越（`..` / 绝对路径）、`unzip -Z1` 预扫、必须有 `.model3.json` 且同名 `.moc3` 存在
+- 上传缓冲放 `/tmp`（tmpfs，不写 flash），断线残留 60 分钟自动清
+- 模型目录写进 `/etc/sysupgrade.conf`，固件升级不丢
+- 依赖 `unzip`
+- 中文名会被保留（`_safe_name` 只清路径危险字符，>60 字节才用时间戳兜底）
+
+后端方法：`upload_begin` / `upload_chunk` / `upload_end` / `upload_abort`（32KB/块 base64）
+
+> ⚠️ 已知问题：Windows 默认（GBK）打包的 zip，解压后文件名可能乱码，
+> 因为 `unzip` 未指定 `-O CP936`。遇到时用 UTF-8 重新打包，或改用英文/数字文件名。

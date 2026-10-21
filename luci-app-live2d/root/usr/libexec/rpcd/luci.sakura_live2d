@@ -761,9 +761,116 @@ test_conn() {
 	reply "$(json_dump)"; json_cleanup 2>/dev/null
 }
 
+# ────────────── 模型上传（分块 base64 → zip → 解压安装）──────────────
+# ★ 安全：① 名字白名单字符 ✓ ② zip 路径穿越检测 ✓ ③ 64MB 上限 ✓
+MODEL_DIR=/www/luci-static/live2d/models
+UP_DIR=/tmp/live2d-upload
+
+up_fail() { reply "{\"ok\":false,\"error\":\"$1\"}"; }
+
+_safe_name() {
+	# 只清掉路径危险字符 ✓ 中文名原样保留 ✓（模型名常是中文）
+	n=$(printf '%s' "$1" | tr -d '\000-\037' | sed 's#[/\\:*?"<>|]#_#g; s/^[[:space:].]*//; s/[[:space:]$]*$//')
+	# 太长（>60 字节）就用时间戳兜底 ✗ 避免把 UTF-8 截断成乱码 ✓
+	[ "$(printf '%s' "$n" | wc -c)" -le 60 ] || n="model$(date +%s)"
+	printf '%s' "$n"
+}
+
+up_begin() {
+	IN=/tmp/l2d-up.in.$$
+	cat > "$IN" 2>/dev/null
+	NAME=$(_safe_name "$(jsonfilter -i "$IN" -e '@.name' 2>/dev/null)")
+	SIZE=$(jsonfilter -i "$IN" -e '@.size' 2>/dev/null)
+	rm -f "$IN"
+	[ -n "$NAME" ] || NAME="model$(date +%s)"
+	case "$SIZE" in ''|*[!0-9]*) SIZE=0 ;; esac
+	[ "$SIZE" -le 67108864 ] 2>/dev/null || { up_fail "超过 64MB 上限"; return; }
+	command -v unzip >/dev/null 2>&1 || { up_fail "缺少 unzip ✓ 请先在 软件包 里安装 unzip"; return; }
+	FREE=$(df -k /www 2>/dev/null | awk 'NR==2{print $4}')
+	if [ -n "$FREE" ] && [ "$FREE" -lt $((SIZE / 1024 * 3 + 8192)) ] 2>/dev/null; then
+		up_fail "空间不足 ✓ 剩余 ${FREE}KB"; return
+	fi
+	mkdir -p "$UP_DIR" "$MODEL_DIR" 2>/dev/null
+	find "$UP_DIR" -name 'u*' -mmin +60 -exec rm -rf {} + 2>/dev/null
+	ID="u$(date +%s)$$"
+	: > "$UP_DIR/$ID.part" 2>/dev/null || { up_fail "无法创建临时文件"; return; }
+	printf '%s' "$SIZE" > "$UP_DIR/$ID.size"
+	printf '%s' "$NAME" > "$UP_DIR/$ID.name"
+	reply "{\"ok\":true,\"id\":\"$ID\"}"
+}
+
+up_chunk() {
+	IN=/tmp/l2d-up.in.$$
+	cat > "$IN" 2>/dev/null
+	ID=$(jsonfilter -i "$IN" -e '@.id' 2>/dev/null)
+	jsonfilter -i "$IN" -e '@.data' 2>/dev/null > "$IN.b64"
+	rm -f "$IN"
+	case "$ID" in u[0-9]*) ;; *) up_fail "无效上传会话"; return ;; esac
+	P="$UP_DIR/$ID.part"
+	[ -f "$P" ] || { up_fail "会话不存在或已过期"; return; }
+	base64 -d < "$IN.b64" >> "$P" 2>/dev/null || true
+	rm -f "$IN.b64"
+	CUR=$(wc -c < "$P" 2>/dev/null)
+	reply "{\"ok\":true,\"got\":${CUR:-0}}"
+}
+
+up_abort() {
+	IN=/tmp/l2d-up.in.$$
+	cat > "$IN" 2>/dev/null
+	ID=$(jsonfilter -i "$IN" -e '@.id' 2>/dev/null)
+	rm -f "$IN"
+	case "$ID" in u[0-9]*) rm -rf "$UP_DIR/$ID".* "$UP_DIR/x$ID" ;; esac
+	reply '{"ok":true}'
+}
+
+up_end() {
+	IN=/tmp/l2d-up.in.$$
+	cat > "$IN" 2>/dev/null
+	ID=$(jsonfilter -i "$IN" -e '@.id' 2>/dev/null)
+	NAME=$(_safe_name "$(jsonfilter -i "$IN" -e '@.name' 2>/dev/null)")
+	rm -f "$IN"
+	case "$ID" in u[0-9]*) ;; *) up_fail "无效上传会话"; return ;; esac
+	P="$UP_DIR/$ID.part"
+	[ -f "$P" ] || { up_fail "上传文件不存在"; return; }
+	SZ=$(wc -c < "$P" 2>/dev/null)
+	EXP=$(cat "$UP_DIR/$ID.size" 2>/dev/null)
+	if [ -n "$EXP" ] && [ "$EXP" -gt 0 ] 2>/dev/null && [ "$SZ" != "$EXP" ]; then
+		rm -rf "$UP_DIR/$ID".*; up_fail "文件不完整（收到 $SZ / 应为 $EXP 字节）"; return
+	fi
+	[ "$SZ" -gt 200 ] 2>/dev/null || { rm -rf "$UP_DIR/$ID".*; up_fail "文件太小 ✓ 不是有效压缩包"; return; }
+	[ "$(head -c 2 "$P" | od -An -tx1 | tr -d ' \n')" = "504b" ] || {
+		rm -rf "$UP_DIR/$ID".*; up_fail "不是 zip 压缩包（请打包成 .zip）"; return; }
+	if unzip -Z1 "$P" 2>/dev/null | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+		rm -rf "$UP_DIR/$ID".*; up_fail "压缩包含非法路径 ✓ 已拒绝"; return
+	fi
+	[ -n "$NAME" ] || NAME="model$(date +%s)"
+	TMPD="$UP_DIR/x$ID"
+	rm -rf "$TMPD"; mkdir -p "$TMPD"
+	if ! unzip -q -o "$P" -d "$TMPD" >/dev/null 2>&1; then
+		rm -rf "$TMPD" "$UP_DIR/$ID".*; up_fail "解压失败（压缩包可能损坏）"; return
+	fi
+	M3=$(find "$TMPD" -maxdepth 4 -name '*.model3.json' -type f 2>/dev/null | head -n1)
+	[ -n "$M3" ] || { rm -rf "$TMPD" "$UP_DIR/$ID".*; up_fail "压缩包里没有 .model3.json ✓ 不是 Live2D 3/4 模型"; return; }
+	SRCD=$(dirname "$M3")
+	BASE=$(basename "$M3" .model3.json)
+	[ -f "$SRCD/$BASE.moc3" ] || { rm -rf "$TMPD" "$UP_DIR/$ID".*; up_fail "缺少 $BASE.moc3 ✓ 模型不完整"; return; }
+	DEST="$MODEL_DIR/$NAME"; N=2
+	while [ -e "$DEST" ]; do DEST="$MODEL_DIR/$NAME-$N"; N=$((N + 1)); done
+	if ! cp -a "$SRCD" "$DEST" 2>/dev/null; then
+		rm -rf "$DEST" "$TMPD" "$UP_DIR/$ID".*; up_fail "写入失败 ✓ 请检查磁盘空间"; return
+	fi
+	DN=$(basename "$DEST")
+	NEWM="$DN/$BASE.model3.json"
+	rm -rf "$TMPD" "$UP_DIR/$ID".*
+	[ -x /usr/libexec/live2d-sync ] && /usr/libexec/live2d-sync >/dev/null 2>&1
+	uci -q set "live2d.main.model=$NEWM" 2>/dev/null && uci -q commit live2d 2>/dev/null
+	HUM=$(du -sh "$DEST" 2>/dev/null | awk '{print $1}')
+	reply "{\"ok\":true,\"model\":\"$NEWM\",\"dir\":\"$DN\",\"size\":\"${HUM:-?}\"}"
+}
+
 case "$1" in
 	list)
-		echo '{ "chat": {}, "tool": {}, "test": {}, "memory": {}, "remember": {}, "forget": {}, "history": {}, "append": {}, "clearhist": {} }'
+		echo '{ "chat": {}, "tool": {}, "test": {}, "memory": {}, "remember": {}, "forget": {}, "history": {}, "append": {}, "clearhist": {}, "upload_begin": {}, "upload_chunk": {}, "upload_end": {}, "upload_abort": {} }'
 		;;
 	call)
 		case "$2" in
@@ -776,6 +883,10 @@ case "$1" in
 			history) m_history ;;
 			append) m_append ;;
 			clearhist) m_clearhist ;;
+			upload_begin) up_begin ;;
+			upload_chunk) up_chunk ;;
+			upload_end) up_end ;;
+			upload_abort) up_abort ;;
 			*) reply '{"ok":false,"error":"未知方法"}' ;;
 		esac
 		;;

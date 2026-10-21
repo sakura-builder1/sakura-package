@@ -4,6 +4,7 @@
 'require uci';
 'require fs';
 'require ui';
+'require rpc';
 
 return view.extend({
 	load: function () {
@@ -160,12 +161,134 @@ return view.extend({
 			  '\n\n建议：平时【关着】✗ 需要时临时开 ✗ 用完关回去 ✓✓'));
 
 		this.map = m;   /* ✓ 关键：保存流程要能拿到 form.Map */
-		return m.render();
+
+		/* 把「上传模型」控件塞进【基本设置】分区末尾 ✓ */
+		var dom = m.render();
+		var vs = this;
+		if (dom && typeof dom.then === 'function')
+			return dom.then(function (n) { return vs.injectUploader(n); });
+		return this.injectUploader(dom);
 	},
 
 	/* ① 用【uci 会话里的当前值】写 config.json ✓
 	     保存的那一瞬间就是对的 ✗ 不依赖落盘顺序 ✓
 	     同时保留已有模型列表 ✓ */
+/* ===== 上传模型（zip 分块上传 → 路由器解压安装）===== */
+
+	/* ArrayBuffer → base64（分片拼接 ✗ 避免 apply 参数过多爆栈 ✓） */
+	b64: function (buf) {
+		var b = new Uint8Array(buf), s = '', i, CH = 0x8000;
+		for (i = 0; i < b.length; i += CH)
+			s += String.fromCharCode.apply(null, b.subarray(i, i + CH));
+		return window.btoa(s);
+	},
+
+	uploadModel: function (file, onProgress) {
+		var CHUNK = 32768, sent = 0, seq = 0, id = null, self = this;
+		var name = (file.name || 'model').replace(/\.zip$/i, '');
+
+		var callBegin = rpc.declare({ object: 'luci.sakura_live2d', method: 'upload_begin', params: [ 'name', 'size' ] });
+		var callChunk = rpc.declare({ object: 'luci.sakura_live2d', method: 'upload_chunk', params: [ 'id', 'seq', 'data' ] });
+		var callEnd   = rpc.declare({ object: 'luci.sakura_live2d', method: 'upload_end',   params: [ 'id', 'name' ] });
+		var callAbort = rpc.declare({ object: 'luci.sakura_live2d', method: 'upload_abort', params: [ 'id' ] });
+
+		function readSlice(start) {
+			return new Promise(function (res, rej) {
+				var fr = new FileReader();
+				fr.onload = function () { res(fr.result); };
+				fr.onerror = function () { rej(new Error('读取文件失败')); };
+				fr.readAsArrayBuffer(file.slice(start, start + CHUNK));
+			});
+		}
+
+		return Promise.resolve(callBegin(name, String(file.size))).then(function (r) {
+			if (!r || !r.ok) throw new Error((r && r.error) || '无法开始上传');
+			id = r.id;
+
+			var step = function () {
+				if (sent >= file.size) return Promise.resolve();
+				return readSlice(sent).then(function (buf) {
+					if (!buf) throw new Error('读取文件失败');
+					return callChunk(id, String(seq), self.b64(buf));
+				}).then(function (rr) {
+					if (!rr || !rr.ok) throw new Error((rr && rr.error) || '上传中断');
+					sent += CHUNK; seq++;
+					onProgress(Math.min(1, sent / file.size));
+					return step();
+				});
+			};
+
+			return step();
+		}).then(function () {
+			return callEnd(id, name);
+		}).then(function (r2) {
+			if (!r2 || !r2.ok) throw new Error((r2 && r2.error) || '安装失败');
+			return r2;
+		}).catch(function (e) {
+			try { if (id) callAbort(id); } catch (x) { }
+			throw e;
+		});
+	},
+
+	buildUploader: function () {
+		var self = this;
+		var fileIn = E('input', { 'type': 'file', 'accept': '.zip', 'style': 'max-width:100%' });
+		var btn = E('button', { 'class': 'cbi-button cbi-button-action' }, _('上传并安装'));
+		var fill = E('div', { 'style': 'height:100%;width:0;background:linear-gradient(90deg,#ff9ec4,#c9a4ff);transition:width .2s' });
+		var bar = E('div', { 'style': 'display:none;height:6px;border-radius:3px;overflow:hidden;margin-top:8px;background:rgba(140,160,200,.25);width:100%' }, [ fill ]);
+		var msg = E('div', { 'style': 'margin-top:6px;font-size:12px;line-height:1.6;color:#8ea8c8' },
+			_('选一个 .zip（里面要有 .model3.json 和 .moc3），≤64MB。上传后会自动解压、加入模型列表并切换过去 ✓'));
+
+		function say(txt, color) {
+			msg.style.color = color || '#8ea8c8';
+			msg.textContent = txt;
+		}
+
+		btn.addEventListener('click', function (ev) {
+			ev.preventDefault();
+			var f = fileIn.files && fileIn.files[0];
+			if (!f) return say(_('先选一个 .zip 文件呀～'), '#ffb3c8');
+			if (!/\.zip$/i.test(f.name)) return say(_('只支持 .zip 压缩包 ✗'), '#ffb3c8');
+			if (f.size > 67108864) return say(_('文件超过 64MB ✗'), '#ffb3c8');
+			btn.disabled = true;
+			bar.style.display = 'block';
+			fill.style.width = '0%';
+			say(_('上传中… 0%'));
+			return self.uploadModel(f, function (p) {
+				fill.style.width = (p * 100).toFixed(1) + '%';
+				say(_('上传中… ') + (p * 100).toFixed(0) + '%');
+			}).then(function (r) {
+				fill.style.width = '100%';
+				say(_('✓ 安装成功：') + r.model + '（' + (r.size || '?') + _('），1.5 秒后刷新页面…'), '#8ce0a8');
+				window.setTimeout(function () { window.location.reload(); }, 1500);
+			}).catch(function (e) {
+				bar.style.display = 'none';
+				btn.disabled = false;
+				say(_('✗ 失败：') + (e && e.message ? e.message : e), '#ff9a9a');
+			});
+		});
+
+		return E('div', { 'class': 'cbi-value' }, [
+			E('label', { 'class': 'cbi-value-title' }, _('上传模型')),
+			E('div', { 'class': 'cbi-value-field' }, [
+				fileIn,
+				E('div', { 'style': 'margin-top:6px' }, [ btn ]),
+				bar,
+				msg
+			])
+		]);
+	},
+
+	/* 挂到【基本设置】分区末尾 ✓ 找不到就退回挂到整页 ✓ */
+	injectUploader: function (node) {
+		try {
+			var secs = (node && node.querySelectorAll) ? node.querySelectorAll('.cbi-section') : [];
+			var host = secs.length ? (secs[0].querySelector('.cbi-section-node') || secs[0]) : node;
+			if (host && host.appendChild) host.appendChild(this.buildUploader());
+		} catch (e) { console.warn('[live2d] 上传控件注入失败', e); }
+		return node;
+	},
+
 	writeFrontLocal: function () {
 		var self = this;
 
