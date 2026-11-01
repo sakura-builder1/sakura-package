@@ -37,10 +37,11 @@ make menuconfig
 | luci-app-systools | 系统便利工具 | 修复系统问题的小工具集（LAN 保活 / 重装内核模块等） |
 | luci-app-linkeasefull | 易有云完整版 | 易有云的本地 Web 桌面入口 |
 | luci-app-dockermanager | Docker Manager | Docker 容器图形化管理界面 |
+| luci-app-kaiplus | 酷友社AI | AI 工作区与会话服务 |
 
 > `luci-app-bandix` 依赖 `openwrt-bandix` 提供的 `bandix` 包，编译时请一起选上。
 > 
-> `luci-app-systools` 依赖 `speedtestcli`，`luci-app-linkeasefull` 依赖 `linkeasefull` 与 `linkease-common-bin`，`luci-app-dockermanager` 依赖 `dockermanager` 与 `linkease-app-entry`，编译时请一起选上。
+> `luci-app-systools` 依赖 `speedtestcli`，`luci-app-linkeasefull` 依赖 `linkeasefull` 与 `linkease-common-bin`，`luci-app-dockermanager` 依赖 `dockermanager` 与 `linkease-app-entry`，`luci-app-kaiplus` 依赖 `kaiplus`，编译时请一起选上。
 
 ## 自动同步上游源码
 
