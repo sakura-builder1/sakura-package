@@ -850,9 +850,9 @@ up_end() {
 	[ -n "$NAME" ] || NAME="model$(date +%s)"
 	TMPD="$UP_DIR/x$ID"
 	rm -rf "$TMPD"; mkdir -p "$TMPD"
-	if ! unzip -q -o "$P" -d "$TMPD" >/dev/null 2>&1; then
-		rm -rf "$TMPD" "$UP_DIR/$ID".*; up_fail "解压失败（压缩包可能损坏）"; return
-	fi
+	# unzip 遇到「字符编码标记不统一」的 zip（部分条目 UTF-8、部分非 UTF-8）会返回 1，
+	# 那只是警告、文件其实已经解出来了，所以这里不看返回码，改用「能否找到模型文件」判断。
+	unzip -q -o "$P" -d "$TMPD" >/dev/null 2>&1
 	M3=$(find "$TMPD" -maxdepth 4 -name '*.model3.json' -type f 2>/dev/null | head -n1)
 	[ -n "$M3" ] || { rm -rf "$TMPD" "$UP_DIR/$ID".*; up_fail "压缩包里没有 .model3.json ✓ 不是 Live2D 3/4 模型"; return; }
 	SRCD=$(dirname "$M3")
