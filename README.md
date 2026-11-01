@@ -33,8 +33,14 @@ make menuconfig
 | luci-app-tailscale | Tailscale 组网 | Tailscale 异地组网的 LuCI 界面 |
 | luci-app-harbor-file | 文件管理 | 网页上传 / 下载 / 管理路由器文件 |
 | luci-app-bandix | Bandix 流量监控 | Bandix 按设备流量统计的 LuCI 界面 |
+| luci-app-socat | Socat | 双向数据转发的端口转发工具 |
+| luci-app-systools | 系统便利工具 | 修复系统问题的小工具集（LAN 保活 / 重装内核模块等） |
+| luci-app-linkeasefull | 易有云完整版 | 易有云的本地 Web 桌面入口 |
+| luci-app-dockermanager | Docker Manager | Docker 容器图形化管理界面 |
 
 > `luci-app-bandix` 依赖 `openwrt-bandix` 提供的 `bandix` 包，编译时请一起选上。
+> 
+> `luci-app-systools` 依赖 `speedtestcli`，`luci-app-linkeasefull` 依赖 `linkeasefull`，`luci-app-dockermanager` 依赖 `dockermanager` 与 `linkease-app-entry`，编译时请一起选上。
 
 ## 自动同步上游源码
 
