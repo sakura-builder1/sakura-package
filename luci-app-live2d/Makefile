@@ -13,7 +13,7 @@ LUCI_DEPENDS:=+luci-base +luci-theme-sakura +jsonfilter +curl +jshn +rpcd-mod-fi
 # jshn:       后端生成 JSON（libubox 的 shell 库）
 # rpcd-mod-file: 配置页保存/执行同步脚本
 PKG_VERSION:=1.0.0
-PKG_RELEASE:=20261022
+PKG_RELEASE:=20261102
 
 include $(TOPDIR)/feeds/luci/luci.mk
 
