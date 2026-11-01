@@ -762,7 +762,7 @@ test_conn() {
 }
 
 # ────────────── 模型上传（分块 base64 → zip → 解压安装）──────────────
-# ★ 安全：① 名字白名单字符 ✓ ② zip 路径穿越检测 ✓ ③ 64MB 上限 ✓
+# ★ 安全：① 名字白名单字符 ✓ ② zip 路径穿越检测 ✓ ③ 4GB 上限 ✓
 MODEL_DIR=/www/luci-static/live2d/models
 UP_DIR=/tmp/live2d-upload
 
@@ -784,7 +784,7 @@ up_begin() {
 	rm -f "$IN"
 	[ -n "$NAME" ] || NAME="model$(date +%s)"
 	case "$SIZE" in ''|*[!0-9]*) SIZE=0 ;; esac
-	[ "$SIZE" -le 67108864 ] 2>/dev/null || { up_fail "超过 64MB 上限"; return; }
+	[ "$SIZE" -le 4294967296 ] 2>/dev/null || { up_fail "超过 4GB 上限"; return; }
 	command -v unzip >/dev/null 2>&1 || { up_fail "缺少 unzip ✓ 请先在 软件包 里安装 unzip"; return; }
 	FREE=$(df -k /www 2>/dev/null | awk 'NR==2{print $4}')
 	if [ -n "$FREE" ] && [ "$FREE" -lt $((SIZE / 1024 * 3 + 8192)) ] 2>/dev/null; then
@@ -796,7 +796,11 @@ up_begin() {
 	: > "$UP_DIR/$ID.part" 2>/dev/null || { up_fail "无法创建临时文件"; return; }
 	printf '%s' "$SIZE" > "$UP_DIR/$ID.size"
 	printf '%s' "$NAME" > "$UP_DIR/$ID.name"
-	reply "{\"ok\":true,\"id\":\"$ID\"}"
+	# ★ 上传令牌：只有登录会话能通过 ubus 拿到 ✓ 直传 CGI 用它鉴权
+	TOK=$(sed 's/-//g' /proc/sys/kernel/random/uuid 2>/dev/null)
+	[ ${#TOK} -ge 16 ] 2>/dev/null || TOK="$(date +%s)$$${RANDOM}${RANDOM}"
+	printf '%s' "$TOK" > "$UP_DIR/$ID.tok"
+	reply "{\"ok\":true,\"id\":\"$ID\",\"tok\":\"$TOK\"}"
 }
 
 up_chunk() {
@@ -838,7 +842,7 @@ up_end() {
 		rm -rf "$UP_DIR/$ID".*; up_fail "文件不完整（收到 $SZ / 应为 $EXP 字节）"; return
 	fi
 	[ "$SZ" -gt 200 ] 2>/dev/null || { rm -rf "$UP_DIR/$ID".*; up_fail "文件太小 ✓ 不是有效压缩包"; return; }
-	[ "$(head -c 2 "$P" | od -An -tx1 | tr -d ' \n')" = "504b" ] || {
+	[ "$(head -c 2 "$P" 2>/dev/null)" = "PK" ] || {
 		rm -rf "$UP_DIR/$ID".*; up_fail "不是 zip 压缩包（请打包成 .zip）"; return; }
 	if unzip -Z1 "$P" 2>/dev/null | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
 		rm -rf "$UP_DIR/$ID".*; up_fail "压缩包含非法路径 ✓ 已拒绝"; return

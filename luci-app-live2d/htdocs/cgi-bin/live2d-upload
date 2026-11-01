@@ -1,0 +1,38 @@
+#!/bin/sh
+# Live2D 模型直传（★ 一次 POST 流式写盘 ✓ 内网满速 ✓ 不占内存 ✓）
+# 鉴权：id + tok 由 ubus upload_begin 下发（只有登录会话拿得到）✓
+UP_DIR=/tmp/live2d-upload
+
+hdr() { printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'; }
+say() { hdr; printf '{"ok":%s,"size":%s,"error":"%s"}\n' "$1" "$2" "$3"; exit 0; }
+
+q=$QUERY_STRING
+getq() { printf '%s' "$q" | tr '&' '\n' | sed -n "s/^$1=//p" | head -1; }
+
+ID=$(getq id)
+TOK=$(getq tok)
+ERR=""
+
+case "$ID" in u[0-9]*) ;; *) ERR="无效上传会话" ;; esac
+if [ -z "$ERR" ]; then
+	case "$TOK" in ''|*[!0-9a-fA-F]*) ERR="无效上传令牌" ;; esac
+fi
+
+P="$UP_DIR/$ID.part"
+T="$UP_DIR/$ID.tok"
+if [ -z "$ERR" ]; then
+	{ [ -f "$P" ] && [ -f "$T" ]; } || ERR="会话不存在或已过期"
+fi
+if [ -z "$ERR" ] && [ "$TOK" != "$(cat "$T" 2>/dev/null)" ]; then
+	ERR="上传令牌不匹配"
+fi
+
+# ★ 报错前必须把请求体读完 ✓ 否则 uhttpd 会丢掉响应（浏览器只看到"网络中断"）
+if [ -n "$ERR" ]; then
+	cat > /dev/null 2>&1
+	say false 0 "$ERR"
+fi
+
+cat > "$P" 2>/dev/null || { cat > /dev/null 2>&1; rm -f "$P"; say false 0 "写入失败（检查磁盘空间）"; }
+SZ=$(wc -c < "$P" 2>/dev/null)
+say true "${SZ:-0}" ""

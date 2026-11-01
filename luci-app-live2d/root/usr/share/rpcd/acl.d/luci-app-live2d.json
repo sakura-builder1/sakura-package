@@ -25,7 +25,7 @@
 					"forget",
 					"history",
 					"append",
-					"clearhist"
+					"clearhist", "upload_begin", "upload_chunk", "upload_end", "upload_abort"
 				]
 			}
 		},
@@ -64,7 +64,7 @@
 					"forget",
 					"history",
 					"append",
-					"clearhist"
+					"clearhist", "upload_begin", "upload_chunk", "upload_end", "upload_abort"
 				]
 			}
 		}

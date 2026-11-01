@@ -175,50 +175,48 @@ return view.extend({
 	     同时保留已有模型列表 ✓ */
 /* ===== 上传模型（zip 分块上传 → 路由器解压安装）===== */
 
-	/* ArrayBuffer → base64（分片拼接 ✗ 避免 apply 参数过多爆栈 ✓） */
-	b64: function (buf) {
-		var b = new Uint8Array(buf), s = '', i, CH = 0x8000;
-		for (i = 0; i < b.length; i += CH)
-			s += String.fromCharCode.apply(null, b.subarray(i, i + CH));
-		return window.btoa(s);
-	},
-
 	uploadModel: function (file, onProgress) {
-		var CHUNK = 32768, sent = 0, seq = 0, id = null, self = this;
 		var name = (file.name || 'model').replace(/\.zip$/i, '');
+		var id = null;
 
 		var callBegin = rpc.declare({ object: 'luci.sakura_live2d', method: 'upload_begin', params: [ 'name', 'size' ] });
-		var callChunk = rpc.declare({ object: 'luci.sakura_live2d', method: 'upload_chunk', params: [ 'id', 'seq', 'data' ] });
 		var callEnd   = rpc.declare({ object: 'luci.sakura_live2d', method: 'upload_end',   params: [ 'id', 'name' ] });
 		var callAbort = rpc.declare({ object: 'luci.sakura_live2d', method: 'upload_abort', params: [ 'id' ] });
 
-		function readSlice(start) {
+		/* ★ 整包直传 /cgi-bin/live2d-upload（后端 cat 直写磁盘 ✓ 不占内存）
+		   原来 32KB 一块走 ubus ✗ 每块都要起一个 sh + jsonfilter（30~50ms 固定开销）
+		   内网实测：24MB 整包 ≈0.15s ✗ 分块要 40 秒以上 */
+		function postBody(url) {
 			return new Promise(function (res, rej) {
-				var fr = new FileReader();
-				fr.onload = function () { res(fr.result); };
-				fr.onerror = function () { rej(new Error('读取文件失败')); };
-				fr.readAsArrayBuffer(file.slice(start, start + CHUNK));
+				var xhr = new XMLHttpRequest();
+				xhr.open('POST', url, true);
+				xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+				xhr.upload.onprogress = function (ev) {
+					if (onProgress && ev.lengthComputable && ev.total > 0)
+						onProgress(Math.min(0.99, ev.loaded / ev.total));
+				};
+				xhr.onload = function () {
+					var r = null;
+					try { r = JSON.parse(xhr.responseText); } catch (e) { }
+					if (xhr.status !== 200 || !r || !r.ok)
+						return rej(new Error((r && r.error) || ('上传失败（HTTP ' + xhr.status + '）')));
+					res(r);
+				};
+				xhr.onerror = function () { rej(new Error('网络中断 ✗ 请重试')); };
+				xhr.send(file);
 			});
 		}
 
 		return Promise.resolve(callBegin(name, String(file.size))).then(function (r) {
 			if (!r || !r.ok) throw new Error((r && r.error) || '无法开始上传');
 			id = r.id;
-
-			var step = function () {
-				if (sent >= file.size) return Promise.resolve();
-				return readSlice(sent).then(function (buf) {
-					if (!buf) throw new Error('读取文件失败');
-					return callChunk(id, String(seq), self.b64(buf));
-				}).then(function (rr) {
-					if (!rr || !rr.ok) throw new Error((rr && rr.error) || '上传中断');
-					sent += CHUNK; seq++;
-					onProgress(Math.min(1, sent / file.size));
-					return step();
-				});
-			};
-
-			return step();
+			if (!r.tok) throw new Error('后端未下发上传令牌 ✗ 请重启 rpcd 后重试');
+			var url = '/cgi-bin/live2d-upload?id=' + encodeURIComponent(id) + '&tok=' + encodeURIComponent(r.tok);
+			return postBody(url).then(function (rr) {
+				if (onProgress) onProgress(1);
+				if (Number(rr.size) !== Number(file.size))
+					throw new Error('传输不完整（' + rr.size + ' / ' + file.size + ' 字节）');
+			});
 		}).then(function () {
 			return callEnd(id, name);
 		}).then(function (r2) {
@@ -237,7 +235,7 @@ return view.extend({
 		var fill = E('div', { 'style': 'height:100%;width:0;background:linear-gradient(90deg,#ff9ec4,#c9a4ff);transition:width .2s' });
 		var bar = E('div', { 'style': 'display:none;height:6px;border-radius:3px;overflow:hidden;margin-top:8px;background:rgba(140,160,200,.25);width:100%' }, [ fill ]);
 		var msg = E('div', { 'style': 'margin-top:6px;font-size:12px;line-height:1.6;color:#8ea8c8' },
-			_('选一个 .zip（里面要有 .model3.json 和 .moc3），≤64MB。上传后会自动解压、加入模型列表并切换过去 ✓'));
+			_('选一个 .zip（里面要有 .model3.json 和 .moc3），≤4GB。上传后会自动解压、加入模型列表并切换过去 ✓'));
 
 		function say(txt, color) {
 			msg.style.color = color || '#8ea8c8';
@@ -249,7 +247,7 @@ return view.extend({
 			var f = fileIn.files && fileIn.files[0];
 			if (!f) return say(_('先选一个 .zip 文件呀～'), '#ffb3c8');
 			if (!/\.zip$/i.test(f.name)) return say(_('只支持 .zip 压缩包 ✗'), '#ffb3c8');
-			if (f.size > 67108864) return say(_('文件超过 64MB ✗'), '#ffb3c8');
+			if (f.size > 4294967296) return say(_('文件超过 4GB ✗'), '#ffb3c8');
 			btn.disabled = true;
 			bar.style.display = 'block';
 			fill.style.width = '0%';
