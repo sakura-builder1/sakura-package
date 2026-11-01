@@ -72,6 +72,15 @@ while read -r dst branch subdir url || [ -n "${dst:-}" ]; do
     mkdir -p "$ROOT/$dst"
     cp -a "$src/." "$ROOT/$dst/"
 
+    # 上游打包缺陷：luci-app-tailscale 自带的 config/init.d 与 tailscale 本体包重复提供，
+    # 安装时文件冲突导致编译失败，这里定向剔除这两个文件（唯一例外，其他包不动）。
+    case "$dst" in
+        luci-app-tailscale)
+            rm -f "$ROOT/$dst/root/etc/config/tailscale" "$ROOT/$dst/root/etc/init.d/tailscale"
+            echo "    已剔除与 tailscale 本体冲突的 config/init.d"
+            ;;
+    esac
+
     echo "    已同步 -> $dst/"
 done < "$CONF"
 
