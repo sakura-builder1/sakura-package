@@ -40,7 +40,7 @@ make menuconfig
 
 > `luci-app-bandix` 依赖 `openwrt-bandix` 提供的 `bandix` 包，编译时请一起选上。
 > 
-> `luci-app-systools` 依赖 `speedtestcli`，`luci-app-linkeasefull` 依赖 `linkeasefull`，`luci-app-dockermanager` 依赖 `dockermanager` 与 `linkease-app-entry`，编译时请一起选上。
+> `luci-app-systools` 依赖 `speedtestcli`，`luci-app-linkeasefull` 依赖 `linkeasefull` 与 `linkease-common-bin`，`luci-app-dockermanager` 依赖 `dockermanager` 与 `linkease-app-entry`，编译时请一起选上。
 
 ## 自动同步上游源码
 
