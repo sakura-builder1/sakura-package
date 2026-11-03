@@ -12,8 +12,9 @@ LUCI_DEPENDS:=+luci-base +luci-theme-sakura +jsonfilter +curl +jshn +rpcd-mod-fi
 # curl:       后端请求 OpenAI 兼容接口
 # jshn:       后端生成 JSON（libubox 的 shell 库）
 # rpcd-mod-file: 配置页保存/执行同步脚本
+# unzip:      上传模型 zip 时解压（busybox 的 unzip 也够用）
 PKG_VERSION:=1.0.0
-PKG_RELEASE:=20261102
+PKG_RELEASE:=20261010
 
 include $(TOPDIR)/feeds/luci/luci.mk
 

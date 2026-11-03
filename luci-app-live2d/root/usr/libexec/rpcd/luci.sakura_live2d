@@ -863,6 +863,8 @@ up_end() {
 	if ! cp -a "$SRCD" "$DEST" 2>/dev/null; then
 		rm -rf "$DEST" "$TMPD" "$UP_DIR/$ID".*; up_fail "写入失败 ✓ 请检查磁盘空间"; return
 	fi
+	# 解压出来的文件权限可能来自 zip（600/700），uhttpd 读不了会 403，统一放开只读位
+	chmod -R a+rX "$DEST" 2>/dev/null
 	DN=$(basename "$DEST")
 	NEWM="$DN/$BASE.model3.json"
 	rm -rf "$TMPD" "$UP_DIR/$ID".*

@@ -50,18 +50,6 @@ if ! uci -q get live2d.main.only_home >/dev/null 2>&1; then
 	uci commit live2d
 fi
 
-
-# 上传的模型存放在 /www 下 ✓ 注册进 sysupgrade 备份清单 ✓ 刷机不丢 ✓
-# 新装/升级后 touch 前端 js ✗ 否则浏览器按旧 mtime 长期不回源 ✓
-[ -f /www/luci-static/resources/view/live2d.js ] && touch /www/luci-static/resources/view/live2d.js
-
-mkdir -p /www/luci-static/live2d/models 2>/dev/null
-if [ -d /www/luci-static/live2d/models ]; then
-	touch /etc/sysupgrade.conf
-	grep -qx '/www/luci-static/live2d/models/' /etc/sysupgrade.conf || \
-		echo '/www/luci-static/live2d/models/' >> /etc/sysupgrade.conf
-fi
-
 # 同步前端用的 config.json ✓
 [ -x /usr/libexec/live2d-sync ] && /usr/libexec/live2d-sync
 
